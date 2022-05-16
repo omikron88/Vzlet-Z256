@@ -1,1 +1,3 @@
-# Vzlet-Z256
+Emulator of Czech Vzlet Z256 computer
+
+... not functional yet ...
