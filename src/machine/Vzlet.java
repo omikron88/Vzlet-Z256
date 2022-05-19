@@ -6,6 +6,7 @@ package machine;
 
 import gui.Screen;
 import java.awt.image.BufferedImage;
+import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.JLabel;
@@ -13,14 +14,16 @@ import z80emu.Z80CPU;
 import z80emu.Z80CTC;
 import z80emu.Z80ExternalException;
 import z80emu.Z80IOSystem;
+import z80emu.Z80InterruptSource;
 import z80emu.Z80Memory;
+import z80emu.Z80TStatesListener;
 
 /**
  *
  * @author Administrator
  */
 public class Vzlet extends Thread 
-       implements Z80Memory, Z80IOSystem {
+       implements Z80Memory, Z80IOSystem, Z80TStatesListener {
     
     private final int VERSION     = 0x01; //version 0.1
     
@@ -40,6 +43,7 @@ public class Vzlet extends Thread
     private int m1pg, rdpg, wrpg;
     private int crtci;      // crtc register index
     private byte[] crtc;    // crtc registers
+    private int tsVideo, tsCtc; // T couunters
     
     public Vzlet() {
         cfg = new Config(); cfg.LoadConfig();
@@ -51,7 +55,13 @@ public class Vzlet extends Thread
         
         crtc = new byte[256];
         
+        java.util.List<Z80InterruptSource> iSources
+				= new ArrayList<Z80InterruptSource>();
+        iSources.add(ctc);
+        
         cpu.setMaxSpeedKHz(2000);
+        cpu.setInterruptSources(iSources.toArray( new Z80InterruptSource[ iSources.size() ] ));
+        cpu.addTStatesListener(this);
         
         paused = true;
 
@@ -123,12 +133,6 @@ public class Vzlet extends Thread
         return paused;
     }
     
-    public void ms20() {        
-        if (!paused) {
-            scr.repaint();
-        }  
-    }
-    
     @Override
     public void run() {
         try {
@@ -167,17 +171,18 @@ public class Vzlet extends Thread
         return val;
     }    
     
-    private void wrVideo(int pg, int addr, int val) {
+    private void wrVideo(int pg, int addr, byte val) {
         switch(pg >>> 16) {
             case 0: { break; } // Video Eprom cannot be written 
-            case 1: { mem.writeVram(addr, (byte) val); break; } // First 64KB of Vram 
-            case 2: { mem.writeVram(addr | 0x10000, (byte) val); break; } // Second 64KB of Vram 
+            case 1: { mem.writeVram(addr, val); break; } // First 64KB of Vram 
+            case 2: { mem.writeVram(addr | 0x10000, val); break; } // Second 64KB of Vram 
             case 3: { // Registers of CRTC
                 if ((addr & 1)==0) {
                     crtci = 0xff & val; // index
                 }
                 else {
-                    crtc[crtci] = (byte) val; // register 
+                    crtc[crtci] = val; // register
+                    System.out.println(String.format("reg: %02X,%02X", crtci,val));
                 }
                 break;
             } 
@@ -201,8 +206,8 @@ public class Vzlet extends Thread
             case 0xfc: {    // page selection
                 monitor = ((value & 0x80)==0);
                 rdpg = 0x30000 & (value << 16);
-                wrpg = 0x30000 & (value << 18);
-                m1pg = 0x30000 & (value << 20);
+                wrpg = 0x30000 & (value << 14);
+                m1pg = 0x30000 & (value << 12);
                 break;
             }
         } //switch
@@ -230,7 +235,7 @@ public class Vzlet extends Thread
                 value = m1 ? mem.readRam(addr|m1pg) : mem.readRam(addr|rdpg);
             }
         }
-//        System.out.println(String.format("Rd: %05X,%02X,%B (%04X)", addr,0xff & value,m1,cpu.getRegPC()));
+//        System.out.println(String.format("Rd: %04X,%02X,%B (%04X)", addr,0xff & value,m1,cpu.getRegPC()));
         return 0xff & value;
     }
 
@@ -241,18 +246,18 @@ public class Vzlet extends Thread
         }
         else {
             if (second) {  // VIDEO má taky 4 stránky !!!
-                wrVideo(wrpg, addr, value);
+                wrVideo(wrpg, addr, (byte) value);
             }
             else { // hlavní přídavná paměť 256kB (4 stránky po 64kB)
                 mem.writeRam(addr|wrpg, (byte) value);
             }
         }
-//        System.out.println(String.format("Wr: %05X,%02X (%04X)", addr,value,cpu.getRegPC()));
+//        System.out.println(String.format("Wr: %04X,%02X (%04X)", addr,value,cpu.getRegPC()));
     }
 
 @Override
     public int getMemByte(int addr, boolean m1) {
-        System.out.println(String.format("getMemByte: %05X,%B (%04X)", addr,m1,cpu.getRegPC()));
+        System.out.println(String.format("getMemByte: %04X,%B (%04X)", addr,m1,cpu.getRegPC()));
         return readMemByte(addr, m1);
     }
 
@@ -261,6 +266,22 @@ public class Vzlet extends Thread
         int lsb = getMemByte(addr, false) & 0xff;
         addr = (addr+1) & 0xffff;
         return ((getMemByte(addr, false) << 8) & 0xff00 | lsb);
+    }
+
+    @Override
+    public void z80TStatesProcessed(Z80CPU cpu, int tStates) {
+            tsVideo += tStates; tsCtc += tStates;
+            
+        if (tsCtc > 26) { // 13T @4MHz is 26T @2MHz 
+            tsCtc = 0;
+            ctc.externalUpdate(0, 1);
+            ctc.externalUpdate(1, 1);
+        }
+
+        if (tsVideo > 20000) {
+            tsVideo = 0;
+            
+        }
     }
 
 }
