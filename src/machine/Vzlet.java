@@ -38,6 +38,8 @@ public class Vzlet extends Thread
     private boolean monitor;
     private boolean second;
     private int m1pg, rdpg, wrpg;
+    private int crtci;      // crtc register index
+    private byte[] crtc;    // crtc registers
     
     public Vzlet() {
         cfg = new Config(); cfg.LoadConfig();
@@ -46,6 +48,8 @@ public class Vzlet extends Thread
         key = new Keyboard();
         cpu = new Z80CPU(this, this);
         ctc = new Z80CTC("CTC1");
+        
+        crtc = new byte[256];
         
         cpu.setMaxSpeedKHz(2000);
         
@@ -142,7 +146,43 @@ public class Vzlet extends Thread
                 Logger.getLogger(Vzlet.class.getName()).log(Level.SEVERE, null, ex);
             }
         }        
+    }
+
+    private byte rdVideo(int pg, int addr) {
+        byte val = 0;
+        switch(pg >>> 16) {
+            case 0: { val = mem.readVideo(addr & 0x1fff); break; } // Video Eprom is 8KB 
+            case 1: { val = mem.readVram(addr); break; }          // First 64KB of Vram 
+            case 2: { val = mem.readVram(addr | 0x10000); break; }// Second 64KB of Vram 
+            case 3: { // Registers of CRTC
+                if ((addr & 1)==0) {
+                    val = (byte) 0xff; // reading index is nonsence
+                }
+                else {
+                    val = crtc[crtci]; // read register 
+                }
+                break;
+            } 
+        } //switch
+        return val;
     }    
+    
+    private void wrVideo(int pg, int addr, int val) {
+        switch(pg >>> 16) {
+            case 0: { break; } // Video Eprom cannot be written 
+            case 1: { mem.writeVram(addr, (byte) val); break; } // First 64KB of Vram 
+            case 2: { mem.writeVram(addr | 0x10000, (byte) val); break; } // Second 64KB of Vram 
+            case 3: { // Registers of CRTC
+                if ((addr & 1)==0) {
+                    crtci = 0xff & val; // index
+                }
+                else {
+                    crtc[crtci] = (byte) val; // register 
+                }
+                break;
+            } 
+        } //switch        
+    }
 
     @Override
     public int readIOByte(int port) {
@@ -158,14 +198,14 @@ public class Vzlet extends Thread
             case 0xc1: { second = true; break; }
             case 0xc2: { second = false; break; }
             case 0xc3: { second = true; break; }            
-            case 0xec: {    // page selection
+            case 0xfc: {    // page selection
                 monitor = ((value & 0x80)==0);
                 rdpg = 0x30000 & (value << 16);
                 wrpg = 0x30000 & (value << 18);
                 m1pg = 0x30000 & (value << 20);
                 break;
             }
-        }
+        } //switch
         System.out.println(String.format("Out: %04X,%02X (%04X)", port,value,cpu.getRegPC()));
     }
 
@@ -179,28 +219,38 @@ public class Vzlet extends Thread
     @Override
     public int readMemByte(int addr, boolean m1) {
         int value = 0;
-        if (monitor && (addr<0x4000)) {
+        if (monitor && (addr<0x4000)) { // CPU ROM and SRAM
             value = mem.readMonitor(addr);
         }
         else {
-            if (second) {
-                
+            if (second) {  // VIDEO má taky 4 stránky !!!
+                value = m1 ? rdVideo(m1pg, addr) : rdVideo(rdpg, addr);
             }
-            else {
+            else { // hlavní přídavná paměť 256kB (4 stránky po 64kB)
                 value = m1 ? mem.readRam(addr|m1pg) : mem.readRam(addr|rdpg);
             }
         }
-        System.out.println(String.format("Rd: %05X,%B (%04X)", addr,m1,cpu.getRegPC()));
+//        System.out.println(String.format("Rd: %05X,%02X,%B (%04X)", addr,0xff & value,m1,cpu.getRegPC()));
         return 0xff & value;
     }
 
     @Override
     public void writeMemByte(int addr, int value) {
-        System.out.println(String.format("Wr: %05X,%02X (%04X)", addr,value,cpu.getRegPC()));
-        mem.writeMonitor(addr, (byte) value);
+        if (monitor && (addr<0x4000)) { // CPU ROM and SRAM
+            mem.writeMonitor(addr, (byte) value);
+        }
+        else {
+            if (second) {  // VIDEO má taky 4 stránky !!!
+                wrVideo(wrpg, addr, value);
+            }
+            else { // hlavní přídavná paměť 256kB (4 stránky po 64kB)
+                mem.writeRam(addr|wrpg, (byte) value);
+            }
+        }
+//        System.out.println(String.format("Wr: %05X,%02X (%04X)", addr,value,cpu.getRegPC()));
     }
 
-    @Override
+@Override
     public int getMemByte(int addr, boolean m1) {
         System.out.println(String.format("getMemByte: %05X,%B (%04X)", addr,m1,cpu.getRegPC()));
         return readMemByte(addr, m1);
@@ -209,7 +259,7 @@ public class Vzlet extends Thread
     @Override
     public int getMemWord(int addr) {
         int lsb = getMemByte(addr, false) & 0xff;
-        addr = (addr+1) & 0x3ffff;
+        addr = (addr+1) & 0xffff;
         return ((getMemByte(addr, false) << 8) & 0xff00 | lsb);
     }
 

@@ -17,8 +17,8 @@ public final class Memory {
     private byte[][] Ram = new byte[256][PAGE_SIZE];
     private byte[][] SRam = new byte[1][PAGE_SIZE];
     private byte[][] VRam = new byte[128][PAGE_SIZE];
-    private byte[][] Boot = new byte[2][PAGE_SIZE];
-    private byte[][] Video = new byte[2][PAGE_SIZE];
+    private byte[][] Boot = new byte[8][PAGE_SIZE];
+    private byte[][] Video = new byte[8][PAGE_SIZE];
     
     private byte[] fakeRAM = new byte[PAGE_SIZE];  // contains FFs for no memory
     private byte[] nullRAM = new byte[PAGE_SIZE];  // for no mem writes
@@ -53,12 +53,12 @@ public final class Memory {
 
         readMonitor[0] = Boot[0]; writeMonitor[0] = nullRAM; 
         readMonitor[1] = Boot[1]; writeMonitor[1] = nullRAM; 
-        readMonitor[2] = Boot[0]; writeMonitor[2] = nullRAM; 
-        readMonitor[3] = Boot[1]; writeMonitor[3] = nullRAM; 
-        readMonitor[4] = Boot[0]; writeMonitor[4] = nullRAM; 
-        readMonitor[5] = Boot[1]; writeMonitor[5] = nullRAM; 
-        readMonitor[6] = Boot[0]; writeMonitor[6] = nullRAM; 
-        readMonitor[7] = Boot[1]; writeMonitor[7] = nullRAM; 
+        readMonitor[2] = Boot[2]; writeMonitor[2] = nullRAM; 
+        readMonitor[3] = Boot[3]; writeMonitor[3] = nullRAM; 
+        readMonitor[4] = Boot[4]; writeMonitor[4] = nullRAM; 
+        readMonitor[5] = Boot[5]; writeMonitor[5] = nullRAM; 
+        readMonitor[6] = Boot[6]; writeMonitor[6] = nullRAM; 
+        readMonitor[7] = Boot[7]; writeMonitor[7] = nullRAM; 
         readMonitor[8] = SRam[0]; writeMonitor[8] = SRam[0]; 
         readMonitor[9] = SRam[0]; writeMonitor[9] = SRam[0]; 
         readMonitor[10] = SRam[0]; writeMonitor[10] = SRam[0]; 
