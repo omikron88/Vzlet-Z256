@@ -50,14 +50,18 @@ public class Crtc {
     public void paint() {
         int c,d,ad,bd,adr;
         int ink;
-        
-        for (int y=0; y<299; y++) {
-            adr = 0x8000+y*80;          // zde netuším, na jakých adresách začínají řádky
-            d = y + ofsy;
-            for (int x=0; x<80; x++) {
+        int q = 0x8000;
+                     // 0      1      2      3      4      5      6      7      8      9      10     11     12     13     14    15
+        int lines[] = {0x8000,0x8050,0x80a0,0x80f0,0x9040,0x9090,0x90e0,0xa030,0xa080,0xa0d0,0xb020,0xb070,0xb0c0,0xc010,0xc060,0xc0b0,
+                       0xd000,0xd050,0xd0a0,0xd0f0,0xe040,0xe090,0xe0e0,0xf030,0xf080,0xf0d0};  //25 hodnot
+        for (int y=0; y<25; y++) {
+            for (int z=0; z<12; z++) {
+             d = y*12+z + ofsy;
+             adr = lines[y]+z*256;
+             for (int x=0; x<80; x++) {
                 ad = m.readVram(adr) & 0xff;
                 bd = m.readVram(adr|0x10000) & 0xff;
-                adr++;
+                adr++;if ((adr& 0xff)==0){ adr=adr+0xf00;}
                 c = x * 8 + ofsx;
                 ink = pal[((ad&0x80)>>7)|((bd&0x80)>>6)];
                 i.setRGB(c++, d, ink);
@@ -76,7 +80,7 @@ public class Crtc {
                 ink = pal[(ad&0x01)|((bd&0x01)<<1)];
                 i.setRGB(c++, d, ink);
             }  //x
+         }  //z    
         }     //y
-
-    }    
+    }    // paint
 }

@@ -206,7 +206,7 @@ public class Vzlet extends Thread
             case 0xF6: { value = ctc.read(2); break; }
             case 0xF7: { value = ctc.read(3); break; }
         }         
-        System.out.println(String.format("In: %04X,%02X (%04X)", port,value,cpu.getRegPC()));
+//        System.out.println(String.format("In: %04X,%02X (%04X)", port,value,cpu.getRegPC()));
         return value;
     }
 
@@ -233,7 +233,7 @@ public class Vzlet extends Thread
                 break;
             }
         } //switch
-        System.out.println(String.format("Out: %04X,%02X (%04X)", port,value,cpu.getRegPC()));
+//        System.out.println(String.format("Out: %04X,%02X (%04X)", port,value,cpu.getRegPC()));
     }
 
     @Override
@@ -292,7 +292,9 @@ public class Vzlet extends Thread
 
     @Override
     public void z80TStatesProcessed(Z80CPU cpu, int tStates) {
-            tsVideo += tStates; tsCtc += tStates;
+            tsVideo += tStates; 
+            tsCtc += tStates;
+            tsCtcfd += tStates;
             
         if (tsCtc > 26) { // 13T @4MHz is 26T @2MHz 
             tsCtc = 0;
