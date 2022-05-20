@@ -46,9 +46,9 @@ public class Screen extends javax.swing.JPanel {
         
         trOp = new AffineTransformOp(tr, rHints);
         
-        setMinimumSize(new Dimension(720, 576));
-        setMaximumSize(new Dimension(720, 576));
-        setPreferredSize(new Dimension(720, 576));
+        setMinimumSize(new Dimension(720, 600));
+        setMaximumSize(new Dimension(720, 600));
+        setPreferredSize(new Dimension(720, 600));
     } // constructor
 
     public void setImage(BufferedImage img) {

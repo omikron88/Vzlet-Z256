@@ -32,8 +32,9 @@ public class Vzlet extends Thread
     private Config cfg;
     private Keyboard key;
     private Memory mem;
+    private Crtc crtc;
     private Z80CPU cpu;
-    private Z80CTC ctc;
+    private Z80CTC ctc, ctcfd;
     
     public JLabel Led1, Led2, Led3, Led4;
     
@@ -41,27 +42,28 @@ public class Vzlet extends Thread
     private boolean monitor;
     private boolean second;
     private int m1pg, rdpg, wrpg;
-    private int crtci;      // crtc register index
-    private byte[] crtc;    // crtc registers
-    private int tsVideo, tsCtc; // T couunters
+    private int tsVideo, tsCtc, tsCtcfd; // T couunters
     
     public Vzlet() {
         cfg = new Config(); cfg.LoadConfig();
-        img = new BufferedImage(720, 288, BufferedImage.TYPE_INT_RGB);
+        img = new BufferedImage(720, 300, BufferedImage.TYPE_INT_RGB);
         mem = new Memory(cfg);
         key = new Keyboard();
+        crtc = new Crtc(this, mem);
         cpu = new Z80CPU(this, this);
-        ctc = new Z80CTC("CTC1");
-        
-        crtc = new byte[256];
+        ctc = new Z80CTC("CTC cpu");
+        ctcfd = new Z80CTC("CTC fdc");
         
         java.util.List<Z80InterruptSource> iSources
 				= new ArrayList<Z80InterruptSource>();
         iSources.add(ctc);
+        iSources.add(ctcfd);
         
         cpu.setMaxSpeedKHz(2000);
         cpu.setInterruptSources(iSources.toArray( new Z80InterruptSource[ iSources.size() ] ));
         cpu.addTStatesListener(this);
+        cpu.addTStatesListener(ctc);
+        cpu.addTStatesListener(ctcfd);
         
         paused = true;
 
@@ -107,7 +109,10 @@ public class Vzlet extends Thread
 
         mem.reset(dirty);
         key.reset();
+        crtc.reset();
         cpu.resetCPU(dirty);
+        ctc.reset(dirty);
+        ctcfd.reset(dirty);
     }
     
     public final void Nmi() {
@@ -152,18 +157,18 @@ public class Vzlet extends Thread
         }        
     }
 
-    private byte rdVideo(int pg, int addr) {
-        byte val = 0;
+    private int rdVideo(int pg, int addr) {
+        int val = 0;
         switch(pg >>> 16) {
             case 0: { val = mem.readVideo(addr & 0x1fff); break; } // Video Eprom is 8KB 
             case 1: { val = mem.readVram(addr); break; }          // First 64KB of Vram 
             case 2: { val = mem.readVram(addr | 0x10000); break; }// Second 64KB of Vram 
             case 3: { // Registers of CRTC
                 if ((addr & 1)==0) {
-                    val = (byte) 0xff; // reading index is nonsence
+                    val = 0xff; // reading index is nonsence
                 }
                 else {
-                    val = crtc[crtci]; // read register 
+                    val = crtc.getReg(); // read register 
                 }
                 break;
             } 
@@ -171,18 +176,17 @@ public class Vzlet extends Thread
         return val;
     }    
     
-    private void wrVideo(int pg, int addr, byte val) {
+    private void wrVideo(int pg, int addr, int val) {
         switch(pg >>> 16) {
             case 0: { break; } // Video Eprom cannot be written 
-            case 1: { mem.writeVram(addr, val); break; } // First 64KB of Vram 
-            case 2: { mem.writeVram(addr | 0x10000, val); break; } // Second 64KB of Vram 
+            case 1: { mem.writeVram(addr, (byte) val); break; } // First 64KB of Vram 
+            case 2: { mem.writeVram(addr | 0x10000, (byte) val); break; } // Second 64KB of Vram 
             case 3: { // Registers of CRTC
                 if ((addr & 1)==0) {
-                    crtci = 0xff & val; // index
+                    crtc.setIndex(val); // index
                 }
                 else {
-                    crtc[crtci] = val; // register
-                    System.out.println(String.format("reg: %02X,%02X", crtci,val));
+                    crtc.setReg(val); // register
                 }
                 break;
             } 
@@ -192,6 +196,16 @@ public class Vzlet extends Thread
     @Override
     public int readIOByte(int port) {
         int value = 0xff;
+        switch(port & 0xff) {
+            case 0xD8: { value = ctcfd.read(0); break; }
+            case 0xD9: { value = ctcfd.read(1); break; }
+            case 0xDA: { value = ctcfd.read(2); break; }
+            case 0xDB: { value = ctcfd.read(3); break; }
+            case 0xF4: { value = ctc.read(0); break; }
+            case 0xF5: { value = ctc.read(1); break; }
+            case 0xF6: { value = ctc.read(2); break; }
+            case 0xF7: { value = ctc.read(3); break; }
+        }         
         System.out.println(String.format("In: %04X,%02X (%04X)", port,value,cpu.getRegPC()));
         return value;
     }
@@ -202,7 +216,15 @@ public class Vzlet extends Thread
             case 0xc0: { second = false; break; }
             case 0xc1: { second = true; break; }
             case 0xc2: { second = false; break; }
-            case 0xc3: { second = true; break; }            
+            case 0xc3: { second = true; break; }
+            case 0xD8: { ctcfd.write(0, value); break; }
+            case 0xD9: { ctcfd.write(1, value); break; }
+            case 0xDA: { ctcfd.write(2, value); break; }
+            case 0xDB: { ctcfd.write(3, value); break; }
+            case 0xF4: { ctc.write(0, value); break; }
+            case 0xF5: { ctc.write(1, value); break; }
+            case 0xF6: { ctc.write(2, value); break; }
+            case 0xF7: { ctc.write(3, value); break; }
             case 0xfc: {    // page selection
                 monitor = ((value & 0x80)==0);
                 rdpg = 0x30000 & (value << 16);
@@ -278,9 +300,15 @@ public class Vzlet extends Thread
             ctc.externalUpdate(1, 1);
         }
 
+        if (tsCtcfd > 2) { // 1MHz 
+            tsCtcfd = 0;
+            ctcfd.externalUpdate(0, 1);
+        }
+
         if (tsVideo > 20000) {
             tsVideo = 0;
-            
+            crtc.paint();
+            scr.repaint();
         }
     }
 
