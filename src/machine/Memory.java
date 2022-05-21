@@ -68,7 +68,7 @@ public final class Memory {
         readMonitor[14] = SRam[0]; writeMonitor[14] = SRam[0]; 
         readMonitor[15] = SRam[0]; writeMonitor[15] = SRam[0]; 
     }
-/*    
+    
     public void dumpRam(String fname, int first, int last) {
         RandomAccessFile f;
         try {
@@ -82,7 +82,7 @@ public final class Memory {
         }
         
     }
-*/    
+    
     public byte readMonitor(int address) {
         return readMonitor[address >>> PAGE_BIT][address & PAGE_MASK];
     }

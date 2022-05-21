@@ -16,6 +16,7 @@ import z80emu.Z80ExternalException;
 import z80emu.Z80IOSystem;
 import z80emu.Z80InterruptSource;
 import z80emu.Z80Memory;
+import z80emu.Z80PIO;
 import z80emu.Z80TStatesListener;
 
 /**
@@ -35,6 +36,7 @@ public class Vzlet extends Thread
     private Crtc crtc;
     private Z80CPU cpu;
     private Z80CTC ctc, ctcfd;
+    private Z80PIO piofd;
     
     public JLabel Led1, Led2, Led3, Led4;
     
@@ -53,17 +55,21 @@ public class Vzlet extends Thread
         cpu = new Z80CPU(this, this);
         ctc = new Z80CTC("CTC cpu");
         ctcfd = new Z80CTC("CTC fdc");
+        piofd = new Z80PIO("PIO fdc");
         
         java.util.List<Z80InterruptSource> iSources
 				= new ArrayList<Z80InterruptSource>();
         iSources.add(ctc);
         iSources.add(ctcfd);
+        iSources.add(piofd);
         
         cpu.setMaxSpeedKHz(2000);
         cpu.setInterruptSources(iSources.toArray( new Z80InterruptSource[ iSources.size() ] ));
         cpu.addTStatesListener(this);
         cpu.addTStatesListener(ctc);
         cpu.addTStatesListener(ctcfd);
+        
+        key.setPIO(piofd);
         
         paused = true;
 
@@ -113,10 +119,11 @@ public class Vzlet extends Thread
         cpu.resetCPU(dirty);
         ctc.reset(dirty);
         ctcfd.reset(dirty);
+        piofd.reset(dirty);
     }
     
     public final void Nmi() {
-//        mem.dumpRam("dump.bin", 0, 7);
+//        mem.dumpRam("dump.bin", 0, 63);
     }
 
     public void startEmulation() {
@@ -197,6 +204,10 @@ public class Vzlet extends Thread
     public int readIOByte(int port) {
         int value = 0xff;
         switch(port & 0xff) {
+            case 0xD4: { value = piofd.readPortA(); break; }
+            case 0xD5: { value = piofd.readPortB(); break; }
+            case 0xD6: { value = piofd.readControlA(); break; }
+            case 0xD7: { value = piofd.readControlB(); break; }
             case 0xD8: { value = ctcfd.read(0); break; }
             case 0xD9: { value = ctcfd.read(1); break; }
             case 0xDA: { value = ctcfd.read(2); break; }
@@ -217,6 +228,10 @@ public class Vzlet extends Thread
             case 0xc1: { second = true; break; }
             case 0xc2: { second = false; break; }
             case 0xc3: { second = true; break; }
+            case 0xD4: { piofd.writePortA(value); break; }
+            case 0xD5: { piofd.writePortB(value); break; }
+            case 0xD6: { piofd.writeControlA(value); break; }
+            case 0xD7: { piofd.writeControlB(value); break; }
             case 0xD8: { ctcfd.write(0, value); break; }
             case 0xD9: { ctcfd.write(1, value); break; }
             case 0xDA: { ctcfd.write(2, value); break; }

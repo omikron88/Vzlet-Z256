@@ -7,17 +7,20 @@ package machine;
 import java.awt.Toolkit;
 import java.awt.event.KeyEvent;;
 import java.awt.event.KeyListener;
+import z80emu.Z80PIO;
+import z80emu.Z80PIOPortListener;
 
 /**
  *
  * @author admin
  */
-public final class Keyboard implements KeyListener {
+public final class Keyboard implements KeyListener, Z80PIOPortListener {
     
-    public boolean CAPSL = false;
-    public boolean NUML  = false;
-    public boolean SCRL  = false;
-    public boolean ALT  = false;
+    private Z80PIO pio;
+    private boolean CAPSL = false;
+    private boolean NUML  = false;
+    private boolean SCRL  = false;
+    private boolean ALT  = false;
     private int key;
     private Toolkit toolkit;
     private boolean pressed = false;
@@ -51,15 +54,10 @@ public final class Keyboard implements KeyListener {
         NUML=toolkit.getLockingKeyState(KeyEvent.VK_NUM_LOCK);
         SCRL=toolkit.getLockingKeyState(KeyEvent.VK_SCROLL_LOCK);
     }
-
-    public int isKey() {
-        return pressed ? 1 : 0;
-    }
     
-    public int getKey() {
-        pressed = false;
-//        System.out.println(String.format("key: %04X", key));
-        return key;
+    public void setPIO(Z80PIO p) {
+        pio = p;
+        pio.addPIOPortListener(this, Z80PIO.PortInfo.A);
     }
     
     @Override
@@ -120,7 +118,11 @@ public final class Keyboard implements KeyListener {
         else {pressed = false;
               ke.consume();
               System.out.println(" - nezpracovává TNS");
-             };
+        }
+        if (pressed) {
+            pio.putInValuePortA(key, true);
+            pressed = false;
+        }
     }
 
     @Override
@@ -128,6 +130,11 @@ public final class Keyboard implements KeyListener {
 //        switch(ke.getKeyCode()) {
 //            
 //        }  //switch
+    }
+
+    @Override
+    public void z80PIOPortStatusChanged(Z80PIO pio, Z80PIO.PortInfo port, Z80PIO.Status status) {
+        
     }
 
 }
