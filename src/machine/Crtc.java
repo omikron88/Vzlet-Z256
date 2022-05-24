@@ -6,7 +6,6 @@
 package machine;
 
 import java.awt.image.BufferedImage;
-import java.awt.Graphics;
 
 /**
  *
@@ -17,7 +16,7 @@ public class Crtc {
     private final int ofsx = 40;
     private final int ofsy = 0;
     
-    private final int pal[] = {0x000000, 0x505050, 0xA0A0A0, 0xF0F0F0};   // index GRBI
+    private final int pal[] = {0x000000, 0xA0A0A0, 0x505050, 0xF0F0F0};   // index GRBI
 
     private Vzlet ma;
     private Memory m;
@@ -51,23 +50,21 @@ public class Crtc {
     }
     
     public void paint() {
-        int c,d,ad,bd,adr,adl,adp,hh,llen,chrl,blsp,kpos;
+        int c,d,ad,bd,adr,adl,adp,hh,llen,chrl,blsp,kpos,kza,kko;
         boolean blik,zobk;
         int ink;
-        String tx;
-        Graphics g = i.getGraphics();
 
-        adr=(this.regs[13]+256*this.regs[12])|0x8000;
-        llen=this.regs[1];  // 50h=80                // počet znaků na řádek
-        chrl=this.regs[9];  // 0Bh=11                // počet vertikálních linek (počítáno od 0 ?)
+        adr=((this.regs[13]&0xff)+256*(this.regs[12]&0xff))|0x8000;
+        llen=(this.regs[1]&0xff);  // 50h=80         // počet znaků na řádek
+        chrl=(this.regs[9]&0xff);  // 0Bh=11         // počet vertikálních linek (počítáno od 0 ?)
         blsp = (this.regs[10]&0x40)==0 ? 16 : 32;    // rychlost blikání
         blik = (this.regs[10]&0x20)==0x20;           // blikat kurzorem
         zobk= !((!blik)&(blsp==32));                 // zobrazit kurzor
-        kpos= this.regs[15] + 256*this.regs[14];
+        kpos= (this.regs[15]&0xff) + 256*(this.regs[14]&0xff);  // pozice kurzoru
+        kza = (this.regs[10]&0x0f);                  // počáteční linka kurzoru
+        kko = (this.regs[11]&0x0f);                  // koncová linka kurzoru
 
-        tx="adr: "+adr+"  "+llen+","+chrl+" blik: "+blik+" blsp:"+blsp+" zobk: "+zobk+" kpos:"+kpos;  // pomocná informace
-        
-        adl=adr;    // odkud začít zobrazovat
+        adl=adr;        // odkud začít zobrazovat
         for (int li=0; li<300; li++)
          {
           d=li+ofsy;    //Y souřadnice (0-299)+offset
@@ -95,7 +92,7 @@ public class Crtc {
                 ink = pal[(ad&0x01)|((bd&0x01)<<1)];
                 i.setRGB(c++, d, ink);   
             }
-          adl=adp;      //obnov začátek mikrořádku
+          adl=adp;        //obnov začátek mikrořádku
           adl=adl+0x100;  // posun na další mikrořádek
           if (((adl&0xf00)>>8) > chrl){   // pokud je hotovo, posun na další řádek
                  hh=(adr&0xf00)>>8;
@@ -104,11 +101,18 @@ public class Crtc {
                  if (adr>65535){adr=(adr&0x0fff)|0x8000;}
                  adl=adr;
                                       }
-         }
+         }   // linky
         pocit++; if (pocit==2*blsp){pocit=0;}  // zvyš počítadlo frames pro blikání kurzoru - perioda je 2x blsp
-        if ((zobk)&((pocit < blsp)&(blik))){    // zobrazit kurzor, pokud je povoleno, a když bliká tak pouze v první půlce režimu 2x blsp
-            
+        if ((zobk)&((pocit < blsp)&(blik))){   // zobrazit kurzor, pokud je povoleno, a když bliká tak pouze v první půlce režimu 2x blsp
+            ad=kpos/llen;bd=kpos-ad*llen;      // řádek,sloupec
+            d=ofsy+ad*(chrl+1)+kza;
+            c=bd*8+ofsx;
+            do {
+            c=bd*8+ofsx;
+            i.setRGB(c++, d, 0xF0F0F0);i.setRGB(c++, d, 0xF0F0F0);i.setRGB(c++, d, 0xF0F0F0);i.setRGB(c++, d, 0xF0F0F0);   // 4x
+            i.setRGB(c++, d, 0xF0F0F0);i.setRGB(c++, d, 0xF0F0F0);i.setRGB(c++, d, 0xF0F0F0);i.setRGB(c++, d, 0xF0F0F0);   // 8x
+            d++;kza++;
+            } while (kza<=kko);
                                            }
-     g.drawString(tx, 5,290);           // zobraz pomocnou informaci
     }    // paint
 }
