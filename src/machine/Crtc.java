@@ -49,31 +49,39 @@ public class Crtc {
         return 0xff & regs[index];
     }
     
+    private int CalAdr(int adre, int row) {
+        int result,r1,r2,r3;
+        r1=adre & 0xff;  r2=(adre & 0x700)*16; r3=(row & 0xf)*256;
+        result=(r1+r2+r3)|0x8000;
+        return result;
+    }
+    
     public void paint() {
-        int c,d,ad,bd,adr,adl,adp,hh,llen,chrl,blsp,kpos,kza,kko;
+        int c,d,ad,bd,adr,adp,hh,llen,chrl,blsp,kpos,kza,kko,por,pmi,kx,ky,kpy;
         boolean blik,zobk;
         int ink;
 
-        adr=((this.regs[13]&0xff)+256*(this.regs[12]&0xff))|0x8000;
+        adr=((this.regs[13]&0xff)+256*(this.regs[12]&0x3f));   // pouze 14 bitů !!!!
         llen=(this.regs[1]&0xff);  // 50h=80         // počet znaků na řádek
         chrl=(this.regs[9]&0xff);  // 0Bh=11         // počet vertikálních linek (počítáno od 0 ?)
         blsp = (this.regs[10]&0x40)==0 ? 16 : 32;    // rychlost blikání
         blik = (this.regs[10]&0x20)==0x20;           // blikat kurzorem
         zobk= !((!blik)&(blsp==32));                 // zobrazit kurzor
-        kpos= (this.regs[15]&0xff) + 256*(this.regs[14]&0xff);  // pozice kurzoru
+        por= (this.regs[6]&0x7f);                    // počet zobrazovaných řádků
+        kpos= (this.regs[15]&0xff) + 256*(this.regs[14]&0x3f);  // pozice kurzoru - pouze 14 bitů !!!!
         kza = (this.regs[10]&0x0f);                  // počáteční linka kurzoru
         kko = (this.regs[11]&0x0f);                  // koncová linka kurzoru
-
-        adl=adr;        // odkud začít zobrazovat
+        
+        pmi=kx=ky=kpy=0;           // počítadlo mikrořádků - počáteční hodnota (musí být 0 !!)
         for (int li=0; li<300; li++)
          {
           d=li+ofsy;    //Y souřadnice (0-299)+offset
-          adp=adl;      //uschovej začátek mikrořádku
           for (int x=0; x<80; x++)
             {
-                ad = m.readVram(adl);
-                bd = m.readVram(adl|0x10000);
-                adl++;if ((adl& 0xff)==0){ adl=adl+0xf00;}  // posun na další znak
+                if ((adr+x)==kpos){kx=x;ky=kpy;}
+                adp=CalAdr(adr+x,pmi);
+                ad = m.readVram(adp);
+                bd = m.readVram(adp|0x10000);
                 c = x * 8 + ofsx;   // X souřadnice (0-639)+offset
                 ink = pal[((ad&0x80)>>7)|((bd&0x80)>>6)];
                 i.setRGB(c++, d, ink);
@@ -92,27 +100,26 @@ public class Crtc {
                 ink = pal[(ad&0x01)|((bd&0x01)<<1)];
                 i.setRGB(c++, d, ink);   
             }
-          adl=adp;        //obnov začátek mikrořádku
-          adl=adl+0x100;  // posun na další mikrořádek
-          if (((adl&0xf00)>>8) > chrl){   // pokud je hotovo, posun na další řádek
-                 hh=(adr&0xf00)>>8;
+          pmi++;         // posun na další mikrořádek
+          if (pmi > chrl){   // pokud je hotovo, posun na další řádek
+                 pmi=0;
                  adr=adr+llen;
-                 if (((adr&0xf00)>>8)!=hh){adr=adr+0xf00;}
-                 if (adr>65535){adr=(adr&0x0fff)|0x8000;}
-                 adl=adr;
-                                      }
+                 kpy++;
+                         }
          }   // linky
         pocit++; if (pocit==2*blsp){pocit=0;}  // zvyš počítadlo frames pro blikání kurzoru - perioda je 2x blsp
         if ((zobk)&((pocit < blsp)&(blik))){   // zobrazit kurzor, pokud je povoleno, a když bliká tak pouze v první půlce režimu 2x blsp
             ad=kpos/llen;bd=kpos-ad*llen;      // řádek,sloupec
-            d=ofsy+ad*(chrl+1)+kza;
-            c=bd*8+ofsx;
+            d=ofsy+ky*(chrl+1)+kza;
+            c=kx*8+ofsx;
             do {
             c=bd*8+ofsx;
             i.setRGB(c++, d, 0xF0F0F0);i.setRGB(c++, d, 0xF0F0F0);i.setRGB(c++, d, 0xF0F0F0);i.setRGB(c++, d, 0xF0F0F0);   // 4x
             i.setRGB(c++, d, 0xF0F0F0);i.setRGB(c++, d, 0xF0F0F0);i.setRGB(c++, d, 0xF0F0F0);i.setRGB(c++, d, 0xF0F0F0);   // 8x
             d++;kza++;
             } while (kza<=kko);
-                                           }
+                                           }               
+ //    g.clearRect(5, 275, 200, 20);
+ //    g.drawString(tx, 5,290);           // zobraz pomocnou informaci
     }    // paint
 }

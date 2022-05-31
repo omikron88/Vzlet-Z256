@@ -204,8 +204,8 @@ public class Vzlet extends Thread
     public int readIOByte(int port) {
         int value = 0xff;
         switch(port & 0xff) {
-            case 0xD4: { value = piofd.readPortA(); break; }
-            case 0xD5: { value = piofd.readPortB(); break; }
+            case 0xD4: { value = piofd.readPortA();break; }
+            case 0xD5: { value = piofd.readPortB(); System.out.println(String.format("In: %04X,%02X (%04X)", port,value,cpu.getRegPC())); break; }
             case 0xD6: { value = piofd.readControlA(); break; }
             case 0xD7: { value = piofd.readControlB(); break; }
             case 0xD8: { value = ctcfd.read(0); break; }
@@ -228,6 +228,7 @@ public class Vzlet extends Thread
             case 0xc1: { second = true; break; }
             case 0xc2: { second = false; break; }
             case 0xc3: { second = true; break; }
+            case 0xd0: {  System.out.println(String.format("Out: %04X,%02X (%04X)", port,value,cpu.getRegPC())); break; }
             case 0xD4: { piofd.writePortA(value); break; }
             case 0xD5: { piofd.writePortB(value); break; }
             case 0xD6: { piofd.writeControlA(value); break; }

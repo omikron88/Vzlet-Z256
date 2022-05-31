@@ -66,7 +66,8 @@ public final class Memory {
         readMonitor[12] = SRam[0]; writeMonitor[12] = SRam[0]; 
         readMonitor[13] = SRam[0]; writeMonitor[13] = SRam[0]; 
         readMonitor[14] = SRam[0]; writeMonitor[14] = SRam[0]; 
-        readMonitor[15] = SRam[0]; writeMonitor[15] = SRam[0]; 
+        readMonitor[15] = SRam[0]; writeMonitor[15] = SRam[0];
+        loadRamD();
     }
     
     public void dumpRam(String fname, int first, int last) {
@@ -112,14 +113,18 @@ public final class Memory {
     }
     
     private void loadRoms() {
-        if (!loadRomAsFile("roms/boot.bin", Boot, 0, PAGE_SIZE*2)) {
-            loadRomAsResource("/roms/boot.bin", Boot, 0, PAGE_SIZE*2);
+        if (!loadRomAsFile("roms/z.bin", Boot, 0, PAGE_SIZE*8)) {
+            loadRomAsResource("/roms/z.bin", Boot, 0, PAGE_SIZE*8);
         }
         if (!loadRomAsFile("roms/video.bin", Video, 0, PAGE_SIZE*2)) {
             loadRomAsResource("/roms/video.bin", Video, 0, PAGE_SIZE*2);
         }
     }
-
+     private void loadRamD() {
+        if (!loadRomAsFile("roms/rd.z2r", Ram, 64, PAGE_SIZE*181)) {
+            loadRomAsResource("/roms/rd.z2r", Ram, 64, PAGE_SIZE*181);
+        }
+     }
     private boolean loadRomAsResource(String filename, byte[][] rom, int page, int size) {
 
         InputStream inRom = Vzlet.class.getResourceAsStream(filename);

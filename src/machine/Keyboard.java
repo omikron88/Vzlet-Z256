@@ -120,7 +120,7 @@ public final class Keyboard implements KeyListener, Z80PIOPortListener {
               System.out.println(" - nezpracovává TNS");
         }
         if (pressed) {
-            pio.putInValuePortA(key, true);
+            pio.putInValuePortA((255-key), true);
             pressed = false;
         }
     }
