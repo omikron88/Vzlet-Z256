@@ -1,0 +1,33 @@
+Klávesnice je běžná Ascii klávesnice s několika speciálními kódy.
+Při stisku pošle Ascii kód tlačítka, při uvolnění neposílá nic.
+Při držení klávesy déle než asi 0.5s opakuje rychlostí asi 4 znaky za sekundu.
+Při stisku klávesy spolu s Ctrl vrací kódy 0-31, tak jako to dělaly první terminály:
+Ctrl+@ = 0x00
+Ctrl+A = 0x01
+Ctrl+B = 0x02
+Ctrl+C = 0x03
+a tak dál
+
+Esc = 0x1B
+Backspace = 0x7F
+Tab = 9
+Enter = 0x0D
+
+speciální kódy:
+
+ROL   (mapováno na Del) 0x80, se Shift 0x81
+COPY  (mapováno na Ins) 0x82, se Shift 0x83 
+BREAK (mapováno na End) 0x84, se Shift 0x85
+
+Směrová tlačítka:
+
+nahoru 0xc1
+dolů   0xc2
+vpravo 0xc3
+vlevo  0xc4
+Home   0x8d
+
+Uživatelská tlačítka:
+jsou tři bez označení, kódy 0xd0, 0xd1, 0xd2
+namapovat možná na F1-F3.
+
