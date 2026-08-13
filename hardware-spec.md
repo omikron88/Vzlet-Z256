@@ -93,6 +93,7 @@ Také obsahuje obvody pro záznam dat na kazetový magnetofon, včetně relé pr
 ### FDC CTC
 
 Časovač na desce FDC na adresách 0xD8-0xDB.
+
   - Kanál 0: Na vstupu 1MHz. Výstup vede na CLK vstup klopného obvodu QQQ zapojeného jako dělička dvěma.
 		Z výstupu QQQ vede na vstup přenosové rychlosti FDC SIO kanál A i B.
   - Kanál 1: Na vstup vede signál z komparátoru levého kanálu z pásky. Výstup při úrovni 1 resetuje klopný obvod QQQ.
@@ -131,6 +132,7 @@ Paralelní port na desce FDC na adresách 0xD4-0xD7. B/-A = A0, C/-D = A1.
 
 Celý port A se používá jako vstupní port pro připojení paralelní Ascii klávesnice s handshakingem pomocí ASTB a ARDY.
 Port B se používá jako diskrétní signály pro řízení různých funkcí:
+
   -1,0: výstup, binárně vybírají floppy mechaniku 0-3.
   -2: výstup, ovládá vstup /DDEN WD2797.
   -3: výstup, ovládá vstup 8/5 WD2797.
