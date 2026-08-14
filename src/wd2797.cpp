@@ -3,6 +3,19 @@
 #include <algorithm>
 
 namespace vz256 {
+namespace {
+
+std::uint32_t byte_delay(const FloppyImage& drive) {
+    return drive.geometry().encoding == FloppyEncoding::mfm ? 64U : 128U;
+}
+
+std::uint8_t sector_size_code(std::size_t size) {
+    std::uint8_t code = 0;
+    for (std::size_t value = 128; value < size; value *= 2) ++code;
+    return code;
+}
+
+} // namespace
 
 void Wd2797::reset() {
     status_ = track_zero;
@@ -53,7 +66,7 @@ std::uint8_t Wd2797::read(std::uint8_t reg, std::array<FloppyImage, 4>& drives,
         data_ = buffer_[position_++];
         drq_ = false;
         if (position_ == buffer_.size()) finish_sector(drives, drive);
-        else drq_delay_ = 64;
+        else drq_delay_ = byte_delay(drives[drive]);
         return data_;
     }
 }
@@ -70,7 +83,7 @@ void Wd2797::write(std::uint8_t reg, std::uint8_t value,
         buffer_[position_++] = value;
         drq_ = false;
         if (position_ == buffer_.size()) finish_sector(drives, drive);
-        else drq_delay_ = 64;
+        else drq_delay_ = byte_delay(drives[drive]);
         break;
     }
 }
@@ -84,7 +97,7 @@ bool Wd2797::begin_sector(std::array<FloppyImage, 4>& drives, std::uint8_t drive
         intrq_ = true;
         return false;
     }
-    buffer_.assign(FloppyImage::sector_size, 0);
+    buffer_.assign(drives[drive].geometry().sector_size, 0);
     if (transfer_ == Transfer::read) std::copy(bytes.begin(), bytes.end(), buffer_.begin());
     position_ = 0;
     status_ = busy;
@@ -106,7 +119,7 @@ void Wd2797::finish_sector(std::array<FloppyImage, 4>& drives, std::uint8_t driv
         // A real WD2797 keeps searching for the next ID field after the last
         // sector. It does not report RNF at the instant the final data byte is
         // consumed; the BIOS uses that interval to issue Force Interrupt.
-        if (sector_ == FloppyImage::sectors_per_track) {
+        if (sector_ >= drives[drive].geometry().sectors_per_track) {
             status_ = busy;
             drq_ = false;
             drq_delay_ = 0;
@@ -159,7 +172,8 @@ void Wd2797::command(std::uint8_t value, std::array<FloppyImage, 4>& drives,
         begin_sector(drives, drive);
     } else if (type == 0xC0U) {
         transfer_ = Transfer::read_address;
-        buffer_ = {track_, side_, sector_, 2, 0, 0}; // N=2 means 512 bytes
+        buffer_ = {track_, side_, sector_,
+                   sector_size_code(drives[drive].geometry().sector_size), 0, 0};
         position_ = 0;
         status_ = busy;
         drq_ = true;

@@ -102,5 +102,46 @@ int main() {
     }
     assert(!machine.interrupt_pending());
     assert((machine.input(0xd0) & vz256::Wd2797::busy) == 0);
+
+    // A 77-track 8-inch FM image uses 26 128-byte sectors instead of the
+    // default 5.25-inch 9x512 layout.
+    const auto eight_inch = vz256::floppy_geometries::eight_sssd_77;
+    {
+        std::vector<std::uint8_t> disk(eight_inch.image_size());
+        disk.back() = 0x6c;
+        std::ofstream image(temp / "eight.img", std::ios::binary);
+        image.write(reinterpret_cast<const char*>(disk.data()),
+                    static_cast<std::streamsize>(disk.size()));
+    }
+    assert(vz256::floppy_geometries::find("8-sssd-77") != nullptr);
+    assert(vz256::floppy_geometries::detect(eight_inch.image_size()) != nullptr);
+    assert(machine.drive(0).load(temp / "eight.img", eight_inch));
+    assert(machine.drive(0).geometry().sector_size == 128);
+    assert(machine.drive(0).sector(76, 0, 26).back() == 0x6c);
+    assert(machine.drive(0).sector(77, 0, 1).empty());
+    assert(machine.drive(0).sector(0, 1, 1).empty());
+
+    machine.output(0xd1, 76);
+    machine.output(0xd2, 26);
+    machine.output(0xd0, 0xc0); // Read Address
+    assert(machine.input(0xd3) == 76);
+    machine.tick(128);
+    assert(machine.input(0xd3) == 0); // side
+    machine.tick(128);
+    assert(machine.input(0xd3) == 26);
+    machine.tick(128);
+    assert(machine.input(0xd3) == 0); // WD2797 N=0 means 128 bytes
+
+    std::array<std::uint8_t, 128> replacement{};
+    replacement[0] = 0xa9;
+    assert(machine.drive(0).write_sector(0, 0, 1, replacement));
+    assert(machine.drive(0).dirty());
+    assert(machine.drive(0).save());
+    assert(!machine.drive(0).dirty());
+    machine.drive(0).eject();
+    assert(!machine.drive(0).mounted());
+    assert(machine.drive(0).load(temp / "eight.img", true)); // auto-detect, read-only
+    assert(machine.drive(0).write_protected());
+    assert(!machine.drive(0).write_sector(0, 0, 1, replacement));
     fs::remove_all(temp);
 }

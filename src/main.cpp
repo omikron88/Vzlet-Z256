@@ -4,6 +4,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -14,6 +15,39 @@
 #include <vector>
 
 namespace {
+
+struct Options {
+    std::filesystem::path resources{"."};
+    std::array<std::filesystem::path, 4> images{};
+    std::array<const vz256::FloppyGeometry*, 4> geometries{};
+    std::array<bool, 4> image_set{};
+    std::array<bool, 4> read_only{};
+};
+
+std::optional<std::size_t> drive_option(std::string_view option, std::string_view prefix) {
+    if (!option.starts_with(prefix) || option.size() != prefix.size() + 1) return std::nullopt;
+    const char letter = option.back();
+    return letter >= 'a' && letter <= 'd'
+               ? std::optional<std::size_t>{static_cast<std::size_t>(letter - 'a')}
+               : std::nullopt;
+}
+
+bool parse_options(int argc, char** argv, Options& options) {
+    for (int i = 1; i < argc; ++i) {
+        const std::string_view option = argv[i];
+        if (option == "--resources" && i + 1 < argc) options.resources = argv[++i];
+        else if (const auto drive = drive_option(option, "--drive-"); drive && i + 1 < argc) {
+            options.images[*drive] = argv[++i];
+            options.image_set[*drive] = true;
+        } else if (const auto drive = drive_option(option, "--geometry-"); drive && i + 1 < argc) {
+            options.geometries[*drive] = vz256::floppy_geometries::find(argv[++i]);
+            if (options.geometries[*drive] == nullptr) return false;
+        } else if (const auto drive = drive_option(option, "--read-only-"); drive) {
+            options.read_only[*drive] = true;
+        } else return false;
+    }
+    return true;
+}
 
 std::optional<std::uint8_t> special_key(const SDL_KeyboardEvent& event) {
     const bool shift = (event.mod & SDL_KMOD_SHIFT) != 0;
@@ -42,15 +76,35 @@ std::optional<std::uint8_t> special_key(const SDL_KeyboardEvent& event) {
 } // namespace
 
 int main(int argc, char** argv) {
-    std::filesystem::path root = ".";
-    if (argc == 3 && std::string_view(argv[1]) == "--resources") root = argv[2];
+    Options options;
+    if (!parse_options(argc, argv, options)) {
+        std::cerr << "Usage: vz256 [--resources DIR] [--drive-a IMAGE] "
+                     "[--geometry-a PROFILE] [--read-only-a] (a..d)\n";
+        return 2;
+    }
 
     vz256::Machine machine;
-    if (!machine.load_roms(root / "roms/boot.rom", root / "roms/char.rom")) {
-        std::cerr << "Unable to load boot and character ROMs from " << root << '\n';
+    if (!machine.load_roms(options.resources / "roms/boot.rom",
+                           options.resources / "roms/char.rom")) {
+        std::cerr << "Unable to load boot and character ROMs from " << options.resources << '\n';
         return 1;
     }
-    if (std::filesystem::exists(root / "disks/boot.img")) machine.drive(0).load(root / "disks/boot.img");
+    if (!options.image_set[0] && std::filesystem::exists(options.resources / "disks/boot.img")) {
+        options.images[0] = options.resources / "disks/boot.img";
+        options.image_set[0] = true;
+    }
+    for (std::size_t i = 0; i < options.images.size(); ++i) {
+        if (!options.image_set[i]) continue;
+        const bool loaded = options.geometries[i] != nullptr
+                                ? machine.drive(i).load(options.images[i], *options.geometries[i],
+                                                        options.read_only[i])
+                                : machine.drive(i).load(options.images[i], options.read_only[i]);
+        if (!loaded) {
+            std::cerr << "Unable to mount drive " << static_cast<char>('A' + i)
+                      << ": unknown geometry or invalid image size\n";
+            return 1;
+        }
+    }
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
         std::cerr << "SDL initialization failed: " << SDL_GetError() << '\n';
@@ -121,7 +175,10 @@ int main(int argc, char** argv) {
         SDL_RenderPresent(renderer.get());
         SDL_Delay(1);
     }
-    machine.drive(0).save();
+    for (std::size_t i = 0; i < 4; ++i) {
+        auto& drive = machine.drive(i);
+        if (drive.mounted() && drive.dirty() && !drive.write_protected()) drive.save();
+    }
     texture.reset(); renderer.reset(); window.reset();
     SDL_Quit();
 }
