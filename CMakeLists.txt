@@ -3,6 +3,7 @@ project(vzlet-z256 VERSION 0.1.0 LANGUAGES C CXX)
 
 option(VZ256_BUILD_APP "Build the SDL3 emulator front end" ON)
 option(VZ256_BUILD_TESTS "Build unit tests" ON)
+option(VZ256_FETCH_SDL3 "Download SDL3 when no system package is available" ON)
 
 add_library(vz256_core
     src/machine.cpp
@@ -16,36 +17,40 @@ target_compile_options(vz256_core PRIVATE
 if(VZ256_BUILD_APP)
     include(FetchContent)
     find_package(SDL3 3.2 QUIET CONFIG)
-    if(NOT SDL3_FOUND)
+    if(NOT SDL3_FOUND AND VZ256_FETCH_SDL3)
+        FetchContent_Declare(SDL3
+            GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+            GIT_TAG a96677bdf6b4acb84af4ec294e5f60a4e8cbbe03 # release-3.2.22
+            GIT_SHALLOW TRUE)
+        set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+        set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+        FetchContent_MakeAvailable(SDL3)
+    elseif(NOT SDL3_FOUND)
         message(FATAL_ERROR "SDL3 was not found. Install SDL3 or configure with -DVZ256_BUILD_APP=OFF")
     endif()
 
-    # The CPU core is intentionally obtained from the project requested by the
-    # hardware specification.  VZ256_Z80_SOURCE_DIR permits reproducible/offline builds.
+    # Pin both upstream projects: redcode/Z80 uses the Zeta portability library.
+    FetchContent_Declare(zeta
+        GIT_REPOSITORY https://github.com/redcode/Zeta.git
+        GIT_TAG 93ba5ab967eef00f074d21bb760fe9dc48afd2d3)
+    FetchContent_MakeAvailable(zeta)
+
     set(VZ256_Z80_SOURCE_DIR "" CACHE PATH "Existing checkout of redcode/Z80")
     if(VZ256_Z80_SOURCE_DIR)
-        set(z80_SOURCE_DIR "${VZ256_Z80_SOURCE_DIR}")
+        FetchContent_Declare(z80 SOURCE_DIR "${VZ256_Z80_SOURCE_DIR}")
     else()
         FetchContent_Declare(z80
             GIT_REPOSITORY https://github.com/redcode/Z80.git
-            GIT_TAG master
-            GIT_SHALLOW TRUE)
-        FetchContent_MakeAvailable(z80)
+            GIT_TAG 91664e84bc90e5c0b2263877aa480c93712f8976)
     endif()
-
-    find_path(Z80_INCLUDE_DIR Z80.h
-        HINTS "${z80_SOURCE_DIR}" "${z80_SOURCE_DIR}/sources" "${z80_SOURCE_DIR}/include")
-    find_file(Z80_SOURCE_FILE NAMES Z80.c z80.c
-        HINTS "${z80_SOURCE_DIR}" "${z80_SOURCE_DIR}/sources" "${z80_SOURCE_DIR}/source")
-    if(NOT Z80_INCLUDE_DIR OR NOT Z80_SOURCE_FILE)
-        message(FATAL_ERROR "The redcode/Z80 checkout does not contain Z80.h and Z80.c")
-    endif()
-
-    add_library(redcode_z80 STATIC "${Z80_SOURCE_FILE}")
-    target_include_directories(redcode_z80 PUBLIC "${Z80_INCLUDE_DIR}")
+    set(Z80_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    set(Z80_WITH_EXECUTE ON CACHE BOOL "" FORCE)
+    set(Z80_WITH_Q ON CACHE BOOL "" FORCE)
+    set(Z80_WITH_ZILOG_NMOS_LD_A_IR_BUG ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(z80)
 
     add_executable(vz256 src/main.cpp src/redcode_cpu.cpp)
-    target_link_libraries(vz256 PRIVATE vz256_core redcode_z80 SDL3::SDL3)
+    target_link_libraries(vz256 PRIVATE vz256_core Z80 SDL3::SDL3)
     target_compile_features(vz256 PRIVATE cxx_std_20)
 endif()
 
@@ -54,4 +59,9 @@ if(VZ256_BUILD_TESTS)
     add_executable(vz256_tests tests/core_tests.cpp)
     target_link_libraries(vz256_tests PRIVATE vz256_core)
     add_test(NAME core COMMAND vz256_tests)
+    if(VZ256_BUILD_APP)
+        add_executable(vz256_cpu_tests tests/cpu_tests.cpp src/redcode_cpu.cpp)
+        target_link_libraries(vz256_cpu_tests PRIVATE vz256_core Z80)
+        add_test(NAME cpu_bus COMMAND vz256_cpu_tests)
+    endif()
 endif()

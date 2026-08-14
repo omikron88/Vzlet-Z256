@@ -21,22 +21,27 @@ oddělen od paměťového a obrazového jádra, které lze testovat bez SDL.
 
 ## Sestavení
 
-Je třeba CMake 3.24+, překladač s C++20 a vývojová verze SDL 3. CMake stáhne
-`redcode/Z80`; v prostředí bez sítě lze předat již existující checkout:
+Je třeba CMake 3.24+ a překladač s C++20. CMake stáhne připnuté revize SDL 3,
+`redcode/Z80` a jeho závislosti Zeta. Systémové SDL3 použije automaticky;
+v prostředí bez sítě lze předat již existující checkout Z80 a vypnout stažení SDL:
 
 ```sh
-cmake -S . -B build -DVZ256_Z80_SOURCE_DIR=/cesta/k/Z80
+cmake -S . -B build -DVZ256_Z80_SOURCE_DIR=/cesta/k/Z80 -DVZ256_FETCH_SDL3=OFF
 cmake --build build
 ./build/vz256 --resources .
 ```
 
-Samotné jádro a testy nemají externí závislosti:
+Samotné paměťové a obrazové jádro lze testovat bez externích závislostí:
 
 ```sh
 cmake -S . -B build -DVZ256_BUILD_APP=OFF
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+Při běžném sestavení se navíc spustí integrační test skutečného jádra Z80. Testovací
+program provede opcode/data fetch, zápis do RAM a výstup na stránkovací port, takže
+ověřuje nejen linkování knihovny, ale také celý adaptér sběrnice.
 
 ## Návrh dalších etap
 

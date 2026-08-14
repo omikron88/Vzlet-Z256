@@ -1,11 +1,6 @@
 #include "vz256/cpu.hpp"
 #include "vz256/machine.hpp"
 
-// Keep the third-party header isolated from the rest of the emulator.  The
-// redcode project intentionally exposes its bus through compile-time macros;
-// deployments provide the corresponding bridge while building Z80.c.  This
-// translation unit owns the host side and is the single point that needs to be
-// adapted if a different upstream revision is selected.
 #include <Z80.h>
 
 #include <cstdint>
@@ -13,26 +8,60 @@
 namespace vz256 {
 
 struct RedcodeCpu::Impl {
-    explicit Impl(Machine& host) : machine(host) {}
+    explicit Impl(Machine& host) : machine(host) {
+        context.context = this;
+        context.fetch_opcode = fetch_opcode;
+        context.fetch = read;
+        context.read = read;
+        context.write = write;
+        context.in = input;
+        context.out = output;
+        context.halt = nullptr;
+        context.nop = nullptr;
+        context.nmia = nullptr;
+        context.inta = nullptr;
+        context.int_fetch = nullptr;
+        context.ld_i_a = nullptr;
+        context.ld_r_a = nullptr;
+        context.reti = nullptr;
+        context.retn = nullptr;
+        context.hook = nullptr;
+        context.illegal = nullptr;
+        context.options = Z80_MODEL_ZILOG_NMOS;
+        z80_power(&context, Z_TRUE);
+    }
+
+    ~Impl() { z80_power(&context, Z_FALSE); }
+
+    static zuint8 fetch_opcode(void* self, zuint16 address) {
+        return static_cast<Impl*>(self)->machine.read(address, true);
+    }
+    static zuint8 read(void* self, zuint16 address) {
+        return static_cast<Impl*>(self)->machine.read(address);
+    }
+    static void write(void* self, zuint16 address, zuint8 value) {
+        static_cast<Impl*>(self)->machine.write(address, value);
+    }
+    static zuint8 input(void* self, zuint16 port) {
+        return static_cast<Impl*>(self)->machine.input(port);
+    }
+    static void output(void* self, zuint16 port, zuint8 value) {
+        static_cast<Impl*>(self)->machine.output(port, value);
+    }
+
     Machine& machine;
-    // Reserving/including the upstream type here deliberately makes an ABI
-    // mismatch visible at build time without leaking it into public headers.
-    Z80Context context{};
+    Z80 context{};
 };
 
 RedcodeCpu::RedcodeCpu(Machine& machine) : impl_(new Impl(machine)) {}
 RedcodeCpu::~RedcodeCpu() { delete impl_; }
 
 void RedcodeCpu::reset() {
-    Z80Reset(&impl_->context);
+    z80_instant_reset(&impl_->context);
 }
 
 std::uint32_t RedcodeCpu::run(std::uint32_t cycles) {
-    std::uint32_t spent = 0;
-    while (spent < cycles) {
-        spent += static_cast<std::uint32_t>(Z80Execute(&impl_->context));
-    }
-    return spent;
+    return static_cast<std::uint32_t>(z80_execute(&impl_->context, cycles));
 }
 
 } // namespace vz256
