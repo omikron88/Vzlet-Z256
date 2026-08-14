@@ -11,19 +11,33 @@ void Wd2797::reset() {
     data_ = command_ = 0;
     drq_ = intrq_ = index_ = multiple_ = false;
     side_ = 0;
+    type_one_status_ = true;
     transfer_ = Transfer::none;
     buffer_.clear();
     position_ = 0;
+    drq_delay_ = 0;
+}
+
+void Wd2797::tick(std::uint32_t cycles) {
+    if (drq_delay_ == 0) return;
+    if (cycles >= drq_delay_) {
+        drq_delay_ = 0;
+        drq_ = true;
+    } else {
+        drq_delay_ -= cycles;
+    }
 }
 
 std::uint8_t Wd2797::status(std::array<FloppyImage, 4>& drives, std::uint8_t drive) {
     auto result = status_;
     if (!drives[drive].mounted()) result |= not_ready;
     if (drq_) result |= data_request;
-    if (track_ == 0) result |= track_zero;
+    if (type_one_status_ && track_ == 0) result |= track_zero;
     // The boot monitor waits for an index edge before issuing RESTORE.
-    index_ = !index_;
-    if (transfer_ == Transfer::none && index_) result |= data_request;
+    if (type_one_status_) {
+        index_ = !index_;
+        if (transfer_ == Transfer::none && index_) result |= data_request;
+    }
     intrq_ = false; // reading status acknowledges INTRQ
     return result;
 }
@@ -39,7 +53,7 @@ std::uint8_t Wd2797::read(std::uint8_t reg, std::array<FloppyImage, 4>& drives,
         data_ = buffer_[position_++];
         drq_ = false;
         if (position_ == buffer_.size()) finish_sector(drives, drive);
-        else drq_ = true;
+        else drq_delay_ = 64;
         return data_;
     }
 }
@@ -56,7 +70,7 @@ void Wd2797::write(std::uint8_t reg, std::uint8_t value,
         buffer_[position_++] = value;
         drq_ = false;
         if (position_ == buffer_.size()) finish_sector(drives, drive);
-        else drq_ = true;
+        else drq_delay_ = 64;
         break;
     }
 }
@@ -75,6 +89,7 @@ bool Wd2797::begin_sector(std::array<FloppyImage, 4>& drives, std::uint8_t drive
     position_ = 0;
     status_ = busy;
     drq_ = true;
+    drq_delay_ = 0;
     intrq_ = false;
     return true;
 }
@@ -88,12 +103,28 @@ void Wd2797::finish_sector(std::array<FloppyImage, 4>& drives, std::uint8_t driv
         return;
     }
     if (multiple_) {
+        // A real WD2797 keeps searching for the next ID field after the last
+        // sector. It does not report RNF at the instant the final data byte is
+        // consumed; the BIOS uses that interval to issue Force Interrupt.
+        if (sector_ == FloppyImage::sectors_per_track) {
+            status_ = busy;
+            drq_ = false;
+            drq_delay_ = 0;
+            return;
+        }
         ++sector_;
-        if (begin_sector(drives, drive)) return;
+        if (begin_sector(drives, drive)) {
+            drq_ = false;
+            // Leave a rotational gap long enough for the BIOS transfer loop
+            // to distinguish the end of one physical sector from the next.
+            drq_delay_ = 1'024;
+            return;
+        }
     }
     status_ = 0;
     transfer_ = Transfer::none;
     drq_ = false;
+    drq_delay_ = 0;
     intrq_ = true;
 }
 
@@ -101,6 +132,7 @@ void Wd2797::command(std::uint8_t value, std::array<FloppyImage, 4>& drives,
                      std::uint8_t drive) {
     command_ = value;
     drq_ = intrq_ = false;
+    drq_delay_ = 0;
     transfer_ = Transfer::none;
     status_ = 0;
 
@@ -110,6 +142,7 @@ void Wd2797::command(std::uint8_t value, std::array<FloppyImage, 4>& drives,
         return;
     }
     if (type < 0x80U) { // Type I seek/step commands complete immediately.
+        type_one_status_ = true;
         if (type == 0x00U) track_ = 0;
         else if (type == 0x10U) track_ = data_;
         else if (type == 0x40U || type == 0x50U) ++track_;
@@ -119,6 +152,7 @@ void Wd2797::command(std::uint8_t value, std::array<FloppyImage, 4>& drives,
     }
 
     side_ = static_cast<std::uint8_t>((value >> 1U) & 1U);
+    type_one_status_ = false;
     multiple_ = (value & 0x10U) != 0;
     if ((type & 0xC0U) == 0x80U) {
         transfer_ = (value & 0x20U) != 0 ? Transfer::write : Transfer::read;

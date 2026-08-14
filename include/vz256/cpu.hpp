@@ -21,6 +21,7 @@ public:
     RedcodeCpu& operator=(const RedcodeCpu&) = delete;
     void reset() override;
     std::uint32_t run(std::uint32_t cycles) override;
+    [[nodiscard]] std::uint16_t program_counter() const;
 
 private:
     struct Impl;

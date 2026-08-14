@@ -39,6 +39,8 @@ void Machine::reset() {
     pio_b_output_ = 0;
     pio_b_vector_ = 0;
     pio_b_interrupt_enabled_ = false;
+    pio_b_expect_direction_ = false;
+    pio_b_expect_interrupt_mask_ = false;
     motor_timer_phase_ = false;
     fdc_.reset();
     video_.reset();
@@ -80,7 +82,7 @@ std::uint8_t Machine::input(std::uint16_t port) {
         return keyboard_data_;
     }
     if (p == 0xD6) return keyboard_ready_ ? 0x80 : 0x00;
-    if (p == 0xDA) {
+    if (p == 0xF6) {
         // BIOS motor spin-up code polls CTC channel 2 for the transition from
         // a non-terminal count to 1. Exact CTC timing will replace this edge.
         motor_timer_phase_ = !motor_timer_phase_;
@@ -102,10 +104,23 @@ void Machine::output(std::uint16_t port, std::uint8_t value) {
     } else if (p == 0xD5) {
         pio_b_output_ = static_cast<std::uint8_t>(value & 0x3FU);
     } else if (p == 0xD7) {
-        // Minimal Z80 PIO channel-B control sequencing needed by the BIOS:
-        // an even word supplies the IM2 vector; x111 words control interrupts.
-        if ((value & 1U) == 0) pio_b_vector_ = value;
-        else if ((value & 0x0FU) == 7U) pio_b_interrupt_enabled_ = (value & 0x80U) != 0;
+        // Z80 PIO mode 3 and interrupt-control words are followed by an I/O
+        // direction or interrupt mask byte. Those bytes may be even, but they
+        // are data and must not be mistaken for a new IM2 vector.
+        if (pio_b_expect_direction_) {
+            pio_b_expect_direction_ = false;
+        } else if (pio_b_expect_interrupt_mask_) {
+            pio_b_expect_interrupt_mask_ = false;
+        } else if ((value & 1U) == 0) {
+            pio_b_vector_ = value;
+        } else if ((value & 0x0FU) == 0x0FU) {
+            pio_b_expect_direction_ = (value & 0xC0U) == 0xC0U;
+        } else if ((value & 0x0FU) == 7U) {
+            pio_b_interrupt_enabled_ = (value & 0x80U) != 0;
+            pio_b_expect_interrupt_mask_ = (value & 0x10U) != 0;
+        } else if ((value & 0x0FU) == 3U) {
+            pio_b_interrupt_enabled_ = (value & 0x80U) != 0;
+        }
     } else if (p == 0xFC) paging_ = value;
     else if ((p & 0xF0U) == 0xC0U) secondary_ = static_cast<std::uint8_t>(p & 0x0FU);
     // Remaining devices deliberately return benign values until their timing

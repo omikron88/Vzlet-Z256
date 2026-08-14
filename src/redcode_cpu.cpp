@@ -67,9 +67,16 @@ std::uint32_t RedcodeCpu::run(std::uint32_t cycles) {
     std::uint32_t spent = 0;
     while (spent < cycles) {
         z80_int(&impl_->context, impl_->machine.interrupt_pending() ? Z_TRUE : Z_FALSE);
-        spent += static_cast<std::uint32_t>(z80_execute(&impl_->context, 1));
+        const auto instruction_cycles =
+            static_cast<std::uint32_t>(z80_run(&impl_->context, 1));
+        impl_->machine.tick(instruction_cycles);
+        spent += instruction_cycles;
     }
     return spent;
+}
+
+std::uint16_t RedcodeCpu::program_counter() const {
+    return static_cast<std::uint16_t>(impl_->context.pc.uint16_value);
 }
 
 } // namespace vz256

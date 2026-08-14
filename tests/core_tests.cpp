@@ -76,7 +76,10 @@ int main() {
     }
     assert(machine.drive(0).load(temp / "disk.img"));
     machine.output(0xd7, 0x88); // PIO B interrupt vector
-    machine.output(0xd7, 0xb7); // enable interrupt on high level
+    machine.output(0xd7, 0xcf); // mode 3
+    machine.output(0xd7, 0xc0); // direction mask, not a vector
+    machine.output(0xd7, 0xb7); // enable interrupt on high level, mask follows
+    machine.output(0xd7, 0x7f); // monitor DRQ on bit 7
     machine.output(0xd1, 0);    // track 0
     machine.output(0xd2, 1);    // sector 1
     machine.output(0xd0, 0x88); // read sector
@@ -84,9 +87,13 @@ int main() {
     assert(machine.interrupt_pending());
     assert(machine.interrupt_vector() == 0x88);
     assert(machine.input(0xd3) == 0xde);
+    assert(!machine.interrupt_pending());
+    machine.tick(64);
     assert(machine.input(0xd3) == 0xad);
-    for (std::size_t i = 2; i < vz256::FloppyImage::sector_size; ++i)
+    for (std::size_t i = 2; i < vz256::FloppyImage::sector_size; ++i) {
+        machine.tick(64);
         (void)machine.input(0xd3);
+    }
     assert(!machine.interrupt_pending());
     assert((machine.input(0xd0) & vz256::Wd2797::busy) == 0);
     fs::remove_all(temp);

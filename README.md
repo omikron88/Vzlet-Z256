@@ -46,6 +46,11 @@ Při běžném sestavení se navíc spustí integrační test skutečného jádr
 program provede opcode/data fetch, zápis do RAM a výstup na stránkovací port, takže
 ověřuje nejen linkování knihovny, ale také celý adaptér sběrnice.
 
+Test `boot_disk` spustí dodanou monitorovou EPROM, provede inicializaci periferií a
+ověří, že BIOS přes přerušení PIO/WD2797 načte z `boot.img` jak diskový loader do
+`0xF000`, tak CCP/BDOS do `0xE400`, vypíše prompt CP/M a přejde do čekání na
+klávesnici v rutině BIOS CONIN.
+
 ## Návrh dalších etap
 
 1. WD2797: doplnit Read/Write Track, CRC, reálné časování a geometrii 77stopých 8\" disků.

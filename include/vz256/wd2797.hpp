@@ -21,6 +21,7 @@ public:
     };
 
     void reset();
+    void tick(std::uint32_t cycles);
     [[nodiscard]] std::uint8_t read(std::uint8_t reg,
                                     std::array<FloppyImage, 4>& drives,
                                     std::uint8_t drive);
@@ -49,10 +50,12 @@ private:
     bool intrq_{};
     bool index_{};
     bool multiple_{};
+    bool type_one_status_{true};
     std::uint8_t side_{};
     Transfer transfer_{Transfer::none};
     std::vector<std::uint8_t> buffer_;
     std::size_t position_{};
+    std::uint32_t drq_delay_{};
 };
 
 } // namespace vz256
