@@ -58,10 +58,16 @@ int main() {
     machine.video().render(pixels);
     assert(pixels[2] == 0xffaaaaaaU);
 
+    machine.output(0xd7, 0x88); // PIO base vector: channel A uses 0x8a
+    machine.output(0xd6, 0x83); // enable keyboard interrupt
     machine.key('A');
-    assert(machine.input(0xd6) == 0x80);
-    assert(machine.input(0xd4) == 'A');
-    assert(machine.input(0xd6) == 0x00);
+    machine.key(0x0d);
+    assert(machine.interrupt_pending());
+    assert(machine.interrupt_vector() == 0x8a);
+    assert(machine.input(0xd4) == static_cast<std::uint8_t>(~'A'));
+    assert(machine.interrupt_pending());
+    assert(machine.input(0xd4) == static_cast<std::uint8_t>(~0x0d));
+    assert(!machine.interrupt_pending());
 
     // WD2797 read-sector flow and its DRQ signal through PIO channel B.
     {

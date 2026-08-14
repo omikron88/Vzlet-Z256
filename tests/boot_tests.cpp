@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <filesystem>
+#include <vector>
 
 int main(int argc, char** argv) {
     assert(argc == 2);
@@ -24,4 +25,15 @@ int main(int argc, char** argv) {
     // CP/M image. Verify the final CCP/BDOS signature instead.
     assert(machine.read(0xE400) == 0xC3);
     assert(machine.read(0xE401) == 0x5C);
+    std::vector<std::uint32_t> before(vz256::Video::width * vz256::Video::height);
+    std::vector<std::uint32_t> after(before.size());
+    machine.video().render(before);
+
+    // Type a real CP/M command through the active-low PIO-A keyboard path.
+    for (const auto key : {'D', 'I', 'R', '\r'}) machine.key(static_cast<std::uint8_t>(key));
+    cpu.run(20'000'000);
+    assert(cpu.program_counter() >= 0xFAE1 && cpu.program_counter() <= 0xFAE6);
+    assert(!machine.interrupt_pending());
+    machine.video().render(after);
+    assert(before != after);
 }

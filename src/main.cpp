@@ -3,14 +3,43 @@
 
 #include <SDL3/SDL.h>
 
-#include <array>
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <vector>
+
+namespace {
+
+std::optional<std::uint8_t> special_key(const SDL_KeyboardEvent& event) {
+    const bool shift = (event.mod & SDL_KMOD_SHIFT) != 0;
+    if ((event.mod & SDL_KMOD_CTRL) != 0 && event.key >= SDLK_A && event.key <= SDLK_Z)
+        return static_cast<std::uint8_t>(event.key & 0x1f);
+    switch (event.key) {
+    case SDLK_RETURN: case SDLK_KP_ENTER: return 0x0d;
+    case SDLK_TAB: return 0x09;
+    case SDLK_ESCAPE: return 0x1b;
+    case SDLK_BACKSPACE: return 0x7f;
+    case SDLK_UP: return 0xc1;
+    case SDLK_DOWN: return 0xc2;
+    case SDLK_RIGHT: return 0xc3;
+    case SDLK_LEFT: return 0xc4;
+    case SDLK_HOME: return 0x8d;
+    case SDLK_DELETE: return shift ? 0x81 : 0x80; // ROL
+    case SDLK_INSERT: return shift ? 0x83 : 0x82; // COPY
+    case SDLK_END: return shift ? 0x85 : 0x84; // BREAK
+    case SDLK_F1: return 0xd0;
+    case SDLK_F2: return 0xd1;
+    case SDLK_F3: return 0xd2;
+    default: return std::nullopt;
+    }
+}
+
+} // namespace
 
 int main(int argc, char** argv) {
     std::filesystem::path root = ".";
@@ -42,6 +71,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     SDL_SetTextureScaleMode(texture.get(), SDL_SCALEMODE_NEAREST);
+    SDL_StartTextInput(window.get());
 
     vz256::RedcodeCpu cpu(machine);
     machine.reset();
@@ -56,8 +86,13 @@ int main(int argc, char** argv) {
             if (event.type == SDL_EVENT_QUIT) running = false;
             if (event.type == SDL_EVENT_KEY_DOWN) {
                 if (event.key.key == SDLK_F12) { machine.reset(); cpu.reset(); }
-                else if (event.key.key >= 0x20 && event.key.key <= 0x7e)
-                    machine.key(static_cast<std::uint8_t>(event.key.key));
+                else if (const auto key = special_key(event.key)) machine.key(*key);
+            }
+            if (event.type == SDL_EVENT_TEXT_INPUT) {
+                for (const auto* text = reinterpret_cast<const unsigned char*>(event.text.text);
+                     *text != 0; ++text) {
+                    if (*text >= 0x20 && *text <= 0x7e) machine.key(*text);
+                }
             }
         }
         const auto now = std::chrono::steady_clock::now();

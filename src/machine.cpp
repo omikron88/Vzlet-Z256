@@ -35,7 +35,8 @@ bool Machine::load_roms(const std::filesystem::path& monitor,
 void Machine::reset() {
     paging_ = 0;
     secondary_ = 0;
-    keyboard_ready_ = false;
+    keyboard_queue_.clear();
+    pio_a_interrupt_enabled_ = false;
     pio_b_output_ = 0;
     pio_b_vector_ = 0;
     pio_b_interrupt_enabled_ = false;
@@ -78,10 +79,11 @@ std::uint8_t Machine::input(std::uint16_t port) {
         return fdc_.read(static_cast<std::uint8_t>(p - 0xD0), drives_,
                          static_cast<std::uint8_t>(pio_b_output_ & 3U));
     if (p == 0xD4) {
-        keyboard_ready_ = false;
-        return keyboard_data_;
+        if (keyboard_queue_.empty()) return 0xFF;
+        const auto value = keyboard_queue_.front();
+        keyboard_queue_.pop_front();
+        return static_cast<std::uint8_t>(~value); // keyboard data bus is active-low
     }
-    if (p == 0xD6) return keyboard_ready_ ? 0x80 : 0x00;
     if (p == 0xF6) {
         // BIOS motor spin-up code polls CTC channel 2 for the transition from
         // a non-terminal count to 1. Exact CTC timing will replace this edge.
@@ -103,6 +105,11 @@ void Machine::output(std::uint16_t port, std::uint8_t value) {
                    static_cast<std::uint8_t>(pio_b_output_ & 3U));
     } else if (p == 0xD5) {
         pio_b_output_ = static_cast<std::uint8_t>(value & 0x3FU);
+    } else if (p == 0xD6) {
+        // BIOS uses the standard PIO enable/disable interrupt words around
+        // calls into the monitor ROM. Channel A receives keyboard ASTB.
+        if ((value & 0x0FU) == 3U)
+            pio_a_interrupt_enabled_ = (value & 0x80U) != 0;
     } else if (p == 0xD7) {
         // Z80 PIO mode 3 and interrupt-control words are followed by an I/O
         // direction or interrupt mask byte. Those bytes may be even, but they
@@ -128,12 +135,18 @@ void Machine::output(std::uint16_t port, std::uint8_t value) {
 }
 
 bool Machine::interrupt_pending() const {
-    return pio_b_interrupt_enabled_ && fdc_.drq();
+    return (pio_b_interrupt_enabled_ && fdc_.drq()) ||
+           (pio_a_interrupt_enabled_ && !keyboard_queue_.empty());
+}
+
+std::uint8_t Machine::interrupt_vector() const {
+    if (pio_b_interrupt_enabled_ && fdc_.drq()) return pio_b_vector_;
+    return static_cast<std::uint8_t>(pio_b_vector_ + 2U);
 }
 
 void Machine::key(std::uint8_t ascii) {
-    keyboard_data_ = ascii;
-    keyboard_ready_ = true;
+    constexpr std::size_t keyboard_buffer_size = 16;
+    if (keyboard_queue_.size() < keyboard_buffer_size) keyboard_queue_.push_back(ascii);
 }
 
 } // namespace vz256

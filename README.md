@@ -12,7 +12,9 @@ SDL 3 pro okno, vstup a výstup obrazu a procesorové jádro
 - sekundární stránkování `0xC0–0xCF`, 128 KiB planární VRAM a paměťové registry MC6845,
 - převod dvou bitových rovin na 640×300 ve čtyřech odstínech šedi, včetně
   adresního prokládání MA/RA a počáteční adresy obrazu řízené MC6845,
-- obraz disket s bezpečným adresováním 512b sektorů a základ paralelní ASCII klávesnice,
+- obraz disket s bezpečným adresováním 512b sektorů,
+- paralelní aktivně nízká ASCII klávesnice přes PIO A, ASTB přerušení, fronta znaků
+  a SDL mapování Ctrl, kurzorových a speciálních kláves,
 - WD2797 s příkazy Restore/Seek/Step, Read/Write Sector, multi-sector přenosem,
   Read Address, Force Interrupt a signály DRQ/INTRQ přes Z80 PIO B,
 - adaptér procesoru redcode/Z80, real-time smyčka na 4 MHz, reset klávesou **F12**
@@ -49,7 +51,8 @@ ověřuje nejen linkování knihovny, ale také celý adaptér sběrnice.
 Test `boot_disk` spustí dodanou monitorovou EPROM, provede inicializaci periferií a
 ověří, že BIOS přes přerušení PIO/WD2797 načte z `boot.img` jak diskový loader do
 `0xF000`, tak CCP/BDOS do `0xE400`, vypíše prompt CP/M a přejde do čekání na
-klávesnici v rutině BIOS CONIN.
+klávesnici v rutině BIOS CONIN. Následně přes PIO klávesnici zadá `DIR` a ověří
+návrat na další prompt.
 
 ## Návrh dalších etap
 

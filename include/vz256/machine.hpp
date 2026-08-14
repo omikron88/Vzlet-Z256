@@ -7,6 +7,7 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <deque>
 #include <span>
 
 namespace vz256 {
@@ -26,7 +27,7 @@ public:
     void key(std::uint8_t ascii);
     void tick(std::uint32_t cycles) { fdc_.tick(cycles); }
     [[nodiscard]] bool interrupt_pending() const;
-    [[nodiscard]] std::uint8_t interrupt_vector() const { return pio_b_vector_; }
+    [[nodiscard]] std::uint8_t interrupt_vector() const;
 
     [[nodiscard]] Video& video() { return video_; }
     [[nodiscard]] FloppyImage& drive(std::size_t index) { return drives_.at(index); }
@@ -43,8 +44,8 @@ private:
     Wd2797 fdc_;
     std::uint8_t paging_{};
     std::uint8_t secondary_{};
-    std::uint8_t keyboard_data_{};
-    bool keyboard_ready_{};
+    std::deque<std::uint8_t> keyboard_queue_;
+    bool pio_a_interrupt_enabled_{};
     std::uint8_t pio_b_output_{};
     std::uint8_t pio_b_vector_{};
     bool pio_b_interrupt_enabled_{};
