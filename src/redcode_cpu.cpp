@@ -19,7 +19,7 @@ struct RedcodeCpu::Impl {
         context.halt = nullptr;
         context.nop = nullptr;
         context.nmia = nullptr;
-        context.inta = nullptr;
+        context.inta = interrupt_acknowledge;
         context.int_fetch = nullptr;
         context.ld_i_a = nullptr;
         context.ld_r_a = nullptr;
@@ -48,6 +48,9 @@ struct RedcodeCpu::Impl {
     static void output(void* self, zuint16 port, zuint8 value) {
         static_cast<Impl*>(self)->machine.output(port, value);
     }
+    static zuint8 interrupt_acknowledge(void* self, zuint16) {
+        return static_cast<Impl*>(self)->machine.interrupt_vector();
+    }
 
     Machine& machine;
     Z80 context{};
@@ -61,7 +64,12 @@ void RedcodeCpu::reset() {
 }
 
 std::uint32_t RedcodeCpu::run(std::uint32_t cycles) {
-    return static_cast<std::uint32_t>(z80_execute(&impl_->context, cycles));
+    std::uint32_t spent = 0;
+    while (spent < cycles) {
+        z80_int(&impl_->context, impl_->machine.interrupt_pending() ? Z_TRUE : Z_FALSE);
+        spent += static_cast<std::uint32_t>(z80_execute(&impl_->context, 1));
+    }
+    return spent;
 }
 
 } // namespace vz256

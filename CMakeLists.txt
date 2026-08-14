@@ -8,7 +8,8 @@ option(VZ256_FETCH_SDL3 "Download SDL3 when no system package is available" ON)
 add_library(vz256_core
     src/machine.cpp
     src/video.cpp
-    src/floppy.cpp)
+    src/floppy.cpp
+    src/wd2797.cpp)
 target_include_directories(vz256_core PUBLIC include)
 target_compile_features(vz256_core PUBLIC cxx_std_20)
 target_compile_options(vz256_core PRIVATE

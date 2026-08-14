@@ -13,10 +13,12 @@ SDL 3 pro okno, vstup a výstup obrazu a procesorové jádro
 - převod dvou bitových rovin na 640×300 ve čtyřech odstínech šedi, včetně
   adresního prokládání MA/RA a počáteční adresy obrazu řízené MC6845,
 - obraz disket s bezpečným adresováním 512b sektorů a základ paralelní ASCII klávesnice,
+- WD2797 s příkazy Restore/Seek/Step, Read/Write Sector, multi-sector přenosem,
+  Read Address, Force Interrupt a signály DRQ/INTRQ přes Z80 PIO B,
 - adaptér procesoru redcode/Z80, real-time smyčka na 4 MHz, reset klávesou **F12**
   a automatické načtení dodaných ROM/disku.
 
-PIO, SIO, CTC a WD2797 mají připravené dekódování sběrnice, ale jejich stavové automaty,
+PIO, SIO a CTC mají připravené dekódování sběrnice, ale jejich úplné stavové automaty,
 přerušovací daisy-chain a přesné časování jsou další etapou. Tento stav je záměrně
 oddělen od paměťového a obrazového jádra, které lze testovat bez SDL.
 
@@ -46,7 +48,7 @@ ověřuje nejen linkování knihovny, ale také celý adaptér sběrnice.
 
 ## Návrh dalších etap
 
-1. WD2797: příkazy Type I–IV, DRQ/INTRQ, geometrie 80/77 stop a přepínání hustoty.
+1. WD2797: doplnit Read/Write Track, CRC, reálné časování a geometrii 77stopých 8\" disků.
 2. Z80 PIO/CTC/SIO: režimy, vektory IM2 a dva prioritní řetězce podle specifikace.
 3. MC6845: odvozovat počáteční adresu a časování snímku z registrů namísto pevného rastru.
 4. TCP sériové linky, tisk do souboru, magnetofonní WAV a debugger CPU/paměti.

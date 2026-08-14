@@ -2,6 +2,7 @@
 
 #include "vz256/floppy.hpp"
 #include "vz256/video.hpp"
+#include "vz256/wd2797.hpp"
 
 #include <array>
 #include <cstdint>
@@ -23,6 +24,8 @@ public:
     std::uint8_t input(std::uint16_t port);
     void output(std::uint16_t port, std::uint8_t value);
     void key(std::uint8_t ascii);
+    [[nodiscard]] bool interrupt_pending() const;
+    [[nodiscard]] std::uint8_t interrupt_vector() const { return pio_b_vector_; }
 
     [[nodiscard]] Video& video() { return video_; }
     [[nodiscard]] FloppyImage& drive(std::size_t index) { return drives_.at(index); }
@@ -36,10 +39,15 @@ private:
     std::array<std::uint8_t, 8192> monitor_ram_{};
     Video video_;
     std::array<FloppyImage, 4> drives_;
+    Wd2797 fdc_;
     std::uint8_t paging_{};
     std::uint8_t secondary_{};
     std::uint8_t keyboard_data_{};
     bool keyboard_ready_{};
+    std::uint8_t pio_b_output_{};
+    std::uint8_t pio_b_vector_{};
+    bool pio_b_interrupt_enabled_{};
+    bool motor_timer_phase_{};
 };
 
 } // namespace vz256

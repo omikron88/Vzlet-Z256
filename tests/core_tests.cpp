@@ -62,5 +62,32 @@ int main() {
     assert(machine.input(0xd6) == 0x80);
     assert(machine.input(0xd4) == 'A');
     assert(machine.input(0xd6) == 0x00);
+
+    // WD2797 read-sector flow and its DRQ signal through PIO channel B.
+    {
+        std::vector<std::uint8_t> disk(80 * vz256::FloppyImage::sides *
+                                      vz256::FloppyImage::sectors_per_track *
+                                      vz256::FloppyImage::sector_size);
+        disk[0] = 0xde;
+        disk[1] = 0xad;
+        std::ofstream image(temp / "disk.img", std::ios::binary);
+        image.write(reinterpret_cast<const char*>(disk.data()),
+                    static_cast<std::streamsize>(disk.size()));
+    }
+    assert(machine.drive(0).load(temp / "disk.img"));
+    machine.output(0xd7, 0x88); // PIO B interrupt vector
+    machine.output(0xd7, 0xb7); // enable interrupt on high level
+    machine.output(0xd1, 0);    // track 0
+    machine.output(0xd2, 1);    // sector 1
+    machine.output(0xd0, 0x88); // read sector
+    assert((machine.input(0xd5) & 0x80) != 0);
+    assert(machine.interrupt_pending());
+    assert(machine.interrupt_vector() == 0x88);
+    assert(machine.input(0xd3) == 0xde);
+    assert(machine.input(0xd3) == 0xad);
+    for (std::size_t i = 2; i < vz256::FloppyImage::sector_size; ++i)
+        (void)machine.input(0xd3);
+    assert(!machine.interrupt_pending());
+    assert((machine.input(0xd0) & vz256::Wd2797::busy) == 0);
     fs::remove_all(temp);
 }

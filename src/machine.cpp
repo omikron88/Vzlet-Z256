@@ -36,6 +36,11 @@ void Machine::reset() {
     paging_ = 0;
     secondary_ = 0;
     keyboard_ready_ = false;
+    pio_b_output_ = 0;
+    pio_b_vector_ = 0;
+    pio_b_interrupt_enabled_ = false;
+    motor_timer_phase_ = false;
+    fdc_.reset();
     video_.reset();
 }
 
@@ -67,20 +72,48 @@ void Machine::write(std::uint16_t address, std::uint8_t value) {
 
 std::uint8_t Machine::input(std::uint16_t port) {
     const auto p = static_cast<std::uint8_t>(port);
+    if (p >= 0xD0 && p <= 0xD3)
+        return fdc_.read(static_cast<std::uint8_t>(p - 0xD0), drives_,
+                         static_cast<std::uint8_t>(pio_b_output_ & 3U));
     if (p == 0xD4) {
         keyboard_ready_ = false;
         return keyboard_data_;
     }
     if (p == 0xD6) return keyboard_ready_ ? 0x80 : 0x00;
+    if (p == 0xDA) {
+        // BIOS motor spin-up code polls CTC channel 2 for the transition from
+        // a non-terminal count to 1. Exact CTC timing will replace this edge.
+        motor_timer_phase_ = !motor_timer_phase_;
+        return motor_timer_phase_ ? 2 : 1;
+    }
+    if (p == 0xD5) {
+        return static_cast<std::uint8_t>((pio_b_output_ & 0x3FU) |
+                                        (fdc_.intrq() ? 0x40U : 0U) |
+                                        (fdc_.drq() ? 0x80U : 0U));
+    }
     return 0xFF;
 }
 
 void Machine::output(std::uint16_t port, std::uint8_t value) {
     const auto p = static_cast<std::uint8_t>(port);
-    if (p == 0xFC) paging_ = value;
+    if (p >= 0xD0 && p <= 0xD3) {
+        fdc_.write(static_cast<std::uint8_t>(p - 0xD0), value, drives_,
+                   static_cast<std::uint8_t>(pio_b_output_ & 3U));
+    } else if (p == 0xD5) {
+        pio_b_output_ = static_cast<std::uint8_t>(value & 0x3FU);
+    } else if (p == 0xD7) {
+        // Minimal Z80 PIO channel-B control sequencing needed by the BIOS:
+        // an even word supplies the IM2 vector; x111 words control interrupts.
+        if ((value & 1U) == 0) pio_b_vector_ = value;
+        else if ((value & 0x0FU) == 7U) pio_b_interrupt_enabled_ = (value & 0x80U) != 0;
+    } else if (p == 0xFC) paging_ = value;
     else if ((p & 0xF0U) == 0xC0U) secondary_ = static_cast<std::uint8_t>(p & 0x0FU);
     // Remaining devices deliberately return benign values until their timing
     // models are introduced; decoding them here keeps the bus contract stable.
+}
+
+bool Machine::interrupt_pending() const {
+    return pio_b_interrupt_enabled_ && fdc_.drq();
 }
 
 void Machine::key(std::uint8_t ascii) {
