@@ -10,7 +10,8 @@ SDL 3 pro okno, vstup a výstup obrazu a procesorové jádro
 - 256 KiB operační RAM a nezávislé stránky pro čtení, zápis a M1 fetch (`0xFC`),
 - monitorová EPROM/SRAM v prvních 16 KiB včetně zrcadlení kratší EPROM,
 - sekundární stránkování `0xC0–0xCF`, 128 KiB planární VRAM a paměťové registry MC6845,
-- převod dvou bitových rovin na 640×300 ve čtyřech odstínech šedi a zobrazení 4:3,
+- převod dvou bitových rovin na 640×300 ve čtyřech odstínech šedi, včetně
+  adresního prokládání MA/RA a počáteční adresy obrazu řízené MC6845,
 - obraz disket s bezpečným adresováním 512b sektorů a základ paralelní ASCII klávesnice,
 - adaptér procesoru redcode/Z80, real-time smyčka na 4 MHz, reset klávesou **F12**
   a automatické načtení dodaných ROM/disku.

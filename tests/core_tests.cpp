@@ -33,12 +33,30 @@ int main() {
     assert(machine.read(0x1234) == 0x71);
 
     machine.output(0xc1, 0); // video bus
+    machine.video().write(3, 0, 1);  // R1: displayed columns
+    machine.video().write(3, 1, 80);
+    machine.video().write(3, 0, 6);  // R6: displayed character rows
+    machine.video().write(3, 1, 24);
+    machine.video().write(3, 0, 9);  // R9: scanlines per character - 1
+    machine.video().write(3, 1, 11);
     machine.output(0xfc, 0x80 | 0x01 | (1 << 2));
     machine.write(0x8000, 0x80);
+    machine.write(0x8100, 0x40); // next raster line is 0x100 bytes away
     std::vector<std::uint32_t> pixels(vz256::Video::width * vz256::Video::height);
     machine.video().render(pixels);
     assert(pixels[0] == 0xffaaaaaaU);
     assert(pixels[1] == 0xff000000U);
+    assert(pixels[vz256::Video::width] == 0xff000000U);
+    assert(pixels[vz256::Video::width + 1] == 0xffaaaaaaU);
+
+    // CRTC start address 0x100 is wired to VRAM address 0x9000, not 0x8100.
+    machine.video().write(3, 0, 12);
+    machine.video().write(3, 1, 1);
+    machine.video().write(3, 0, 13);
+    machine.video().write(3, 1, 0);
+    machine.write(0x9000, 0x20);
+    machine.video().render(pixels);
+    assert(pixels[2] == 0xffaaaaaaU);
 
     machine.key('A');
     assert(machine.input(0xd6) == 0x80);

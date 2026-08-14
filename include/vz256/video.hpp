@@ -19,6 +19,9 @@ public:
     void reset();
 
 private:
+    [[nodiscard]] static std::uint16_t display_address(std::uint16_t ma,
+                                                       std::uint8_t raster);
+
     std::array<std::uint8_t, plane_size> high_{};
     std::array<std::uint8_t, plane_size> low_{};
     std::array<std::uint8_t, 8192> chars_{};
