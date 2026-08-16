@@ -40,7 +40,7 @@ inline const FloppyGeometry eight_sssd_77{"8-sssd-77", 77, 1, 26, 128,
                                           FloppyEncoding::fm};
 inline const FloppyGeometry eight_dssd_77{"8-dssd-77", 77, 2, 26, 128,
                                           FloppyEncoding::fm};
-inline const FloppyGeometry eight_dsdd_77{"8-dsdd-77", 77, 2, 15, 512,
+inline const FloppyGeometry eight_dsdd_77{"8-dsdd-77", 77, 2, 26, 256,
                                           FloppyEncoding::mfm};
 
 [[nodiscard]] const FloppyGeometry* find(std::string_view name);

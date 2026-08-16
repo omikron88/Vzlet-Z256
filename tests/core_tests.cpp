@@ -176,5 +176,32 @@ int main() {
     assert(machine.drive(0).sector(0, 1, 1).back() == 0x7f);
     assert(machine.drive(0).dirty());
 
+    // Double-density 8-inch media retain 26 sectors per track, but use
+    // 256-byte sectors. Verify its unique size and the WD2797 N=1 ID field.
+    const auto double_density = vz256::floppy_geometries::eight_dsdd_77;
+    {
+        std::vector<std::uint8_t> disk(double_density.image_size());
+        std::ofstream image(temp / "eight-double-density.img", std::ios::binary);
+        image.write(reinterpret_cast<const char*>(disk.data()),
+                    static_cast<std::streamsize>(disk.size()));
+    }
+    assert(double_density.image_size() == 1'025'024);
+    assert(double_density.sectors_per_track == 26);
+    assert(double_density.sector_size == 256);
+    detected = vz256::floppy_geometries::detect(double_density.image_size());
+    assert(detected != nullptr);
+    assert(detected->name == "8-dsdd-77");
+    assert(machine.drive(0).load(temp / "eight-double-density.img"));
+    machine.output(0xd1, 76);
+    machine.output(0xd2, 26);
+    machine.output(0xd0, 0xc2); // Read Address, side compare/side 1
+    assert(machine.input(0xd3) == 76);
+    machine.tick(64);
+    assert(machine.input(0xd3) == 1);
+    machine.tick(64);
+    assert(machine.input(0xd3) == 26);
+    machine.tick(64);
+    assert(machine.input(0xd3) == 1); // WD2797 N=1 means 256 bytes
+
     fs::remove_all(temp);
 }

@@ -45,7 +45,8 @@ Obrazy a geometrie všech mechanik lze zadat samostatně (písmena `a` až `d`):
 ```
 
 Známé profily jsou `5.25-dsdd-80`, `5.25-dsdd-40`, `8-sssd-77`, `8-dssd-77`
-a `8-dsdd-77`. Bez parametru `--geometry-X` se profil jednoznačně rozpozná podle
+a `8-dsdd-77`. Poslední profil používá 77 stop, dvě strany a 26 sektorů po
+256 bajtech. Bez parametru `--geometry-X` se profil jednoznačně rozpozná podle
 velikosti obrazu; neznámá nebo nejednoznačná velikost je bezpečně odmítnuta.
 
 Samotné paměťové a obrazové jádro lze testovat bez externích závislostí:
