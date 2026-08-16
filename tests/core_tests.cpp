@@ -143,5 +143,38 @@ int main() {
     assert(machine.drive(0).load(temp / "eight.img", true)); // auto-detect, read-only
     assert(machine.drive(0).write_protected());
     assert(!machine.drive(0).write_sector(0, 0, 1, replacement));
+
+    // The double-sided 8-inch layout has the IBM 3740 77x26x128 organization
+    // on both sides. Exercise auto-detection and side selection through the
+    // WD2797, not just direct FloppyImage access.
+    const auto double_sided = vz256::floppy_geometries::eight_dssd_77;
+    {
+        std::vector<std::uint8_t> disk(double_sided.image_size());
+        const auto side_one_offset = double_sided.sectors_per_track *
+                                     double_sided.sector_size;
+        disk[side_one_offset] = 0x5d;
+        std::ofstream image(temp / "eight-double-sided.img", std::ios::binary);
+        image.write(reinterpret_cast<const char*>(disk.data()),
+                    static_cast<std::streamsize>(disk.size()));
+    }
+    assert(double_sided.image_size() == 512'512);
+    const auto* detected = vz256::floppy_geometries::detect(512'512);
+    assert(detected != nullptr);
+    assert(detected->name == "8-dssd-77");
+    assert(machine.drive(0).load(temp / "eight-double-sided.img"));
+    assert(machine.drive(0).sector(0, 1, 1).front() == 0x5d);
+    machine.output(0xd1, 0);    // track 0
+    machine.output(0xd2, 1);    // sector 1
+    machine.output(0xd0, 0x82); // Read Sector, side compare/side 1
+    assert(machine.input(0xd3) == 0x5d);
+    machine.output(0xd0, 0xa2); // Write Sector, side compare/side 1
+    for (std::size_t i = 0; i < double_sided.sector_size; ++i) {
+        if (i != 0) machine.tick(128);
+        machine.output(0xd3, static_cast<std::uint8_t>(i));
+    }
+    assert(machine.drive(0).sector(0, 1, 1).front() == 0x00);
+    assert(machine.drive(0).sector(0, 1, 1).back() == 0x7f);
+    assert(machine.drive(0).dirty());
+
     fs::remove_all(temp);
 }
