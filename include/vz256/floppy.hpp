@@ -61,7 +61,10 @@ public:
     void eject();
     [[nodiscard]] bool mounted() const { return !bytes_.empty(); }
     [[nodiscard]] bool write_protected() const { return write_protected_; }
+    [[nodiscard]] bool storage_writable() const { return storage_writable_; }
+    bool set_write_protected(bool enabled);
     [[nodiscard]] bool dirty() const { return dirty_; }
+    [[nodiscard]] const std::filesystem::path& path() const { return path_; }
     [[nodiscard]] const FloppyGeometry& geometry() const { return geometry_; }
     [[nodiscard]] std::span<const std::uint8_t> sector(std::size_t track,
                                                        std::size_t side,
@@ -76,6 +79,7 @@ private:
     std::vector<std::uint8_t> bytes_;
     FloppyGeometry geometry_{floppy_geometries::five_25_dsdd_80};
     bool write_protected_{};
+    bool storage_writable_{};
     mutable bool dirty_{};
 };
 

@@ -10,8 +10,11 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 namespace {
@@ -23,6 +26,88 @@ struct Options {
     std::array<bool, 4> image_set{};
     std::array<bool, 4> read_only{};
 };
+
+constexpr std::array<std::string_view, 6> geometry_names{
+    "auto", "5.25-dsdd-80", "5.25-dsdd-40", "8-sssd-77", "8-dssd-77", "8-dsdd-77"};
+
+struct MediaDialog {
+    bool open{};
+    std::size_t drive{};
+    std::size_t geometry{};
+    std::size_t picker_drive{};
+    std::size_t picker_geometry{};
+    std::optional<std::size_t> confirm_eject;
+    std::string message;
+    std::mutex pending_mutex;
+    bool picker_active{};
+    std::optional<std::tuple<std::size_t, std::size_t, std::filesystem::path>> pending_mount;
+};
+
+void SDLCALL selected_image(void* userdata, const char* const* files, int) {
+    auto& dialog = *static_cast<MediaDialog*>(userdata);
+    std::scoped_lock lock(dialog.pending_mutex);
+    dialog.picker_active = false;
+    if (files == nullptr || files[0] == nullptr) return;
+    dialog.pending_mount = std::tuple{dialog.picker_drive, dialog.picker_geometry,
+                                      std::filesystem::path(files[0])};
+}
+
+void open_image_picker(SDL_Window* window, MediaDialog& dialog) {
+    static constexpr SDL_DialogFileFilter filters[]{{"Disk images", "img;dsk;raw"},
+                                                     {"All files", "*"}};
+    {
+        std::scoped_lock lock(dialog.pending_mutex);
+        if (dialog.picker_active) return;
+        dialog.picker_active = true;
+        dialog.picker_drive = dialog.drive;
+        dialog.picker_geometry = dialog.geometry;
+    }
+    SDL_ShowOpenFileDialog(selected_image, &dialog, window, filters, 2, nullptr, false);
+}
+
+void draw_media_dialog(SDL_Renderer* renderer, vz256::Machine& machine,
+                       const MediaDialog& dialog) {
+    SDL_FRect panel{90.0F, 85.0F, 780.0F, 550.0F};
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, 8, 12, 20, 245);
+    SDL_RenderFillRect(renderer, &panel);
+    SDL_SetRenderDrawColor(renderer, 100, 180, 255, 255);
+    SDL_RenderRect(renderer, &panel);
+    SDL_SetRenderScale(renderer, 2.0F, 2.0F);
+    SDL_SetRenderDrawColor(renderer, 230, 240, 255, 255);
+    SDL_RenderDebugText(renderer, 58.0F, 52.0F, "DISK DRIVES (F10 closes)");
+    for (std::size_t i = 0; i < 4; ++i) {
+        const auto& drive = machine.drive(i);
+        std::string line = i == dialog.drive ? "> " : "  ";
+        line += static_cast<char>('A' + i);
+        line += ": ";
+        if (!drive.mounted()) line += "<empty>";
+        else {
+            line += drive.path().filename().string();
+            line += "  [" + drive.geometry().name + "]";
+            if (drive.write_protected()) line += " RO";
+            if (drive.dirty()) line += " *";
+        }
+        SDL_RenderDebugText(renderer, 58.0F, 76.0F + static_cast<float>(i) * 18.0F,
+                            line.c_str());
+    }
+    const std::string geometry = "Next image geometry: " +
+                                 std::string(geometry_names[dialog.geometry]);
+    SDL_RenderDebugText(renderer, 58.0F, 158.0F, geometry.c_str());
+    SDL_RenderDebugText(renderer, 58.0F, 178.0F,
+                        "UP/DOWN drive  LEFT/RIGHT geometry");
+    SDL_RenderDebugText(renderer, 58.0F, 190.0F,
+                        "ENTER/O mount  E eject  S save  W write protect");
+    if (dialog.confirm_eject) {
+        SDL_SetRenderDrawColor(renderer, 255, 220, 100, 255);
+        SDL_RenderDebugText(renderer, 58.0F, 210.0F,
+                            "Modified image: S save+eject, D discard, ESC cancel");
+    } else if (!dialog.message.empty()) {
+        SDL_SetRenderDrawColor(renderer, 255, 220, 100, 255);
+        SDL_RenderDebugText(renderer, 58.0F, 210.0F, dialog.message.c_str());
+    }
+    SDL_SetRenderScale(renderer, 1.0F, 1.0F);
+}
 
 std::optional<std::size_t> drive_option(std::string_view option, std::string_view prefix) {
     if (!option.starts_with(prefix) || option.size() != prefix.size() + 1) return std::nullopt;
@@ -131,18 +216,94 @@ int main(int argc, char** argv) {
     machine.reset();
     cpu.reset();
     std::vector<std::uint32_t> pixels(vz256::Video::width * vz256::Video::height);
+    MediaDialog media_dialog;
     bool running = true;
     auto previous = std::chrono::steady_clock::now();
     std::uint64_t cycle_fraction = 0;
     while (running) {
+        std::optional<std::tuple<std::size_t, std::size_t, std::filesystem::path>> pending;
+        {
+            std::scoped_lock lock(media_dialog.pending_mutex);
+            pending = std::move(media_dialog.pending_mount);
+            media_dialog.pending_mount.reset();
+        }
+        if (pending) {
+            const auto& [drive_index, geometry_index, path] = *pending;
+            auto& drive = machine.drive(drive_index);
+            if (!machine.media_change_allowed()) {
+                media_dialog.message = "Controller is busy; image was not changed";
+            } else if (drive.dirty()) {
+                media_dialog.message = "Save or eject the modified image first";
+            } else {
+                const auto* geometry = geometry_index == 0
+                    ? nullptr : vz256::floppy_geometries::find(geometry_names[geometry_index]);
+                vz256::FloppyImage replacement;
+                const bool loaded = geometry != nullptr ? replacement.load(path, *geometry)
+                                                        : replacement.load(path);
+                if (loaded) {
+                    drive = std::move(replacement);
+                    media_dialog.message = "Image mounted";
+                } else media_dialog.message = "Unknown geometry or invalid image size";
+            }
+        }
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) running = false;
             if (event.type == SDL_EVENT_KEY_DOWN) {
-                if (event.key.key == SDLK_F12) { machine.reset(); cpu.reset(); }
+                if (event.key.key == SDLK_F10) {
+                    media_dialog.open = !media_dialog.open;
+                    media_dialog.confirm_eject.reset();
+                    media_dialog.message.clear();
+                } else if (media_dialog.open) {
+                    auto& drive = machine.drive(media_dialog.drive);
+                    if (media_dialog.confirm_eject) {
+                        if (event.key.key == SDLK_ESCAPE) media_dialog.confirm_eject.reset();
+                        else if (event.key.key == SDLK_D) {
+                            drive.eject();
+                            media_dialog.confirm_eject.reset();
+                            media_dialog.message = "Changes discarded; image ejected";
+                        } else if (event.key.key == SDLK_S) {
+                            if (drive.save()) {
+                                drive.eject();
+                                media_dialog.confirm_eject.reset();
+                                media_dialog.message = "Image saved and ejected";
+                            } else media_dialog.message = "Unable to save image";
+                        }
+                    } else if (event.key.key == SDLK_UP) {
+                        media_dialog.drive = (media_dialog.drive + 3) % 4;
+                    } else if (event.key.key == SDLK_DOWN) {
+                        media_dialog.drive = (media_dialog.drive + 1) % 4;
+                    } else if (event.key.key == SDLK_LEFT) {
+                        media_dialog.geometry = (media_dialog.geometry +
+                                                 geometry_names.size() - 1) % geometry_names.size();
+                    } else if (event.key.key == SDLK_RIGHT) {
+                        media_dialog.geometry = (media_dialog.geometry + 1) % geometry_names.size();
+                    } else if (event.key.key == SDLK_RETURN || event.key.key == SDLK_O) {
+                        if (!machine.media_change_allowed())
+                            media_dialog.message = "Controller is busy";
+                        else if (drive.dirty())
+                            media_dialog.message = "Save or eject the modified image first";
+                        else open_image_picker(window.get(), media_dialog);
+                    } else if (event.key.key == SDLK_E && drive.mounted()) {
+                        if (!machine.media_change_allowed())
+                            media_dialog.message = "Controller is busy";
+                        else if (drive.dirty()) media_dialog.confirm_eject = media_dialog.drive;
+                        else {
+                            drive.eject();
+                            media_dialog.message = "Image ejected";
+                        }
+                    } else if (event.key.key == SDLK_S && drive.dirty()) {
+                        media_dialog.message = drive.save() ? "Image saved" : "Unable to save image";
+                    } else if (event.key.key == SDLK_W && drive.mounted()) {
+                        const bool protect = !drive.write_protected();
+                        media_dialog.message = drive.set_write_protected(protect)
+                            ? (protect ? "Write protection enabled" : "Write protection disabled")
+                            : "Image file is not writable";
+                    }
+                } else if (event.key.key == SDLK_F12) { machine.reset(); cpu.reset(); }
                 else if (const auto key = special_key(event.key)) machine.key(*key);
             }
-            if (event.type == SDL_EVENT_TEXT_INPUT) {
+            if (!media_dialog.open && event.type == SDL_EVENT_TEXT_INPUT) {
                 for (const auto* text = reinterpret_cast<const unsigned char*>(event.text.text);
                      *text != 0; ++text) {
                     if (*text >= 0x20 && *text <= 0x7e) machine.key(*text);
@@ -155,7 +316,7 @@ int main(int argc, char** argv) {
         cycle_fraction += static_cast<std::uint64_t>(micros) * vz256::Machine::cpu_hz;
         auto cycles = static_cast<std::uint32_t>(cycle_fraction / 1'000'000U);
         cycle_fraction %= 1'000'000U;
-        while (cycles != 0) {
+        while (!media_dialog.open && cycles != 0) {
             const auto slice = std::min(cycles, 20'000U);
             const auto spent = cpu.run(slice);
             if (spent == 0) break;
@@ -172,6 +333,7 @@ int main(int argc, char** argv) {
         const SDL_FRect destination{(w - 800 * scale) / 2, (h - 600 * scale) / 2,
                                     800 * scale, 600 * scale};
         SDL_RenderTexture(renderer.get(), texture.get(), nullptr, &destination);
+        if (media_dialog.open) draw_media_dialog(renderer.get(), machine, media_dialog);
         SDL_RenderPresent(renderer.get());
         SDL_Delay(1);
     }

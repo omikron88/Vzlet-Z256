@@ -31,6 +31,7 @@ public:
 
     [[nodiscard]] Video& video() { return video_; }
     [[nodiscard]] FloppyImage& drive(std::size_t index) { return drives_.at(index); }
+    [[nodiscard]] bool media_change_allowed() const { return fdc_.idle(); }
 
 private:
     [[nodiscard]] std::uint8_t page_for_read(bool opcode) const;

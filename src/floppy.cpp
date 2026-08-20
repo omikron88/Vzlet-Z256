@@ -4,6 +4,7 @@
 #include <array>
 #include <fstream>
 #include <iterator>
+#include <system_error>
 
 namespace vz256 {
 namespace floppy_geometries {
@@ -49,18 +50,41 @@ bool FloppyImage::load(const std::filesystem::path& path, FloppyGeometry geometr
     bytes_ = std::move(data);
     geometry_ = geometry;
     std::ofstream probe;
-    if (!force_read_only) probe.open(path, std::ios::binary | std::ios::app);
-    write_protected_ = force_read_only || !probe.good();
+    probe.open(path, std::ios::binary | std::ios::app);
+    storage_writable_ = probe.good();
+    write_protected_ = force_read_only || !storage_writable_;
     dirty_ = false;
     return true;
 }
 
 bool FloppyImage::save() const {
     if (!mounted() || write_protected_) return false;
-    std::ofstream stream(path_, std::ios::binary | std::ios::trunc);
-    stream.write(reinterpret_cast<const char*>(bytes_.data()), static_cast<std::streamsize>(bytes_.size()));
-    if (!stream.good()) return false;
+    auto temporary = path_;
+    temporary += ".vz256.tmp";
+    {
+        std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+        stream.write(reinterpret_cast<const char*>(bytes_.data()),
+                     static_cast<std::streamsize>(bytes_.size()));
+        stream.flush();
+        if (!stream.good()) {
+            std::error_code ignored;
+            std::filesystem::remove(temporary, ignored);
+            return false;
+        }
+    }
+    std::error_code error;
+    std::filesystem::rename(temporary, path_, error);
+    if (error) {
+        std::filesystem::remove(temporary, error);
+        return false;
+    }
     dirty_ = false;
+    return true;
+}
+
+bool FloppyImage::set_write_protected(bool enabled) {
+    if (!enabled && !storage_writable_) return false;
+    write_protected_ = enabled;
     return true;
 }
 
@@ -69,6 +93,7 @@ void FloppyImage::eject() {
     bytes_.clear();
     dirty_ = false;
     write_protected_ = false;
+    storage_writable_ = false;
 }
 
 std::size_t FloppyImage::offset(std::size_t track, std::size_t side,

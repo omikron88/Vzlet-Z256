@@ -93,6 +93,7 @@ int main() {
     assert(machine.interrupt_pending());
     assert(machine.interrupt_vector() == 0x88);
     assert(machine.input(0xd3) == 0xde);
+    assert(!machine.media_change_allowed());
     assert(!machine.interrupt_pending());
     machine.tick(64);
     assert(machine.input(0xd3) == 0xad);
@@ -102,6 +103,7 @@ int main() {
     }
     assert(!machine.interrupt_pending());
     assert((machine.input(0xd0) & vz256::Wd2797::busy) == 0);
+    assert(machine.media_change_allowed());
 
     // A 77-track 8-inch FM image uses 26 128-byte sectors instead of the
     // default 5.25-inch 9x512 layout.
@@ -138,6 +140,11 @@ int main() {
     assert(machine.drive(0).dirty());
     assert(machine.drive(0).save());
     assert(!machine.drive(0).dirty());
+    assert(!fs::exists((temp / "eight.img").string() + ".vz256.tmp"));
+    assert(machine.drive(0).set_write_protected(true));
+    assert(machine.drive(0).write_protected());
+    assert(machine.drive(0).set_write_protected(false));
+    assert(!machine.drive(0).write_protected());
     machine.drive(0).eject();
     assert(!machine.drive(0).mounted());
     assert(machine.drive(0).load(temp / "eight.img", true)); // auto-detect, read-only

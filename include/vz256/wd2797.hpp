@@ -30,6 +30,7 @@ public:
 
     [[nodiscard]] bool drq() const { return drq_; }
     [[nodiscard]] bool intrq() const { return intrq_; }
+    [[nodiscard]] bool idle() const { return transfer_ == Transfer::none; }
 
 private:
     enum class Transfer { none, read, write, read_address };

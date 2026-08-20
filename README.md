@@ -12,13 +12,19 @@ SDL 3 pro okno, vstup a výstup obrazu a procesorové jádro
 - sekundární stránkování `0xC0–0xCF`, 128 KiB planární VRAM a paměťové registry MC6845,
 - převod dvou bitových rovin na 640×300 ve čtyřech odstínech šedi, včetně
   adresního prokládání MA/RA a počáteční adresy obrazu řízené MC6845,
-- obraz disket s bezpečným adresováním 512b sektorů,
+- obrazy disket s konfigurovatelnou geometrií a sektory 128, 256 nebo 512 bajtů,
 - paralelní aktivně nízká ASCII klávesnice přes PIO A, ASTB přerušení, fronta znaků
   a SDL mapování Ctrl, kurzorových a speciálních kláves,
 - WD2797 s příkazy Restore/Seek/Step, Read/Write Sector, multi-sector přenosem,
   Read Address, Force Interrupt a signály DRQ/INTRQ přes Z80 PIO B,
 - adaptér procesoru redcode/Z80, real-time smyčka na 4 MHz, reset klávesou **F12**
   a automatické načtení dodaných ROM/disku.
+
+Klávesa **F10** otevře správu čtyř mechanik. Šipky nahoru/dolů vybírají mechaniku,
+šipky vlevo/vpravo geometrii pro příští obraz, **Enter** nebo **O** otevře systémový
+výběr souboru, **S** obraz uloží, **E** jej vysune a **W** přepíná ochranu proti
+zápisu. U změněného obrazu je před vysunutím nutné změny uložit nebo výslovně
+zahodit. Zápis obrazu používá dočasný soubor a atomické přejmenování.
 
 PIO, SIO a CTC mají připravené dekódování sběrnice, ale jejich úplné stavové automaty,
 přerušovací daisy-chain a přesné časování jsou další etapou. Tento stav je záměrně
@@ -69,10 +75,10 @@ návrat na další prompt.
 
 ## Návrh dalších etap
 
-1. WD2797: doplnit Read/Write Track, CRC, reálné časování a geometrii 77stopých 8\" disků.
+1. WD2797: doplnit Read/Write Track, CRC a reálné rotační časování.
 2. Z80 PIO/CTC/SIO: režimy, vektory IM2 a dva prioritní řetězce podle specifikace.
 3. MC6845: odvozovat počáteční adresu a časování snímku z registrů namísto pevného rastru.
 4. TCP sériové linky, tisk do souboru, magnetofonní WAV a debugger CPU/paměti.
 
-ROM a diskové obrazy se před ukončením nemění, kromě připojeného zapisovatelného obrazu
-mechaniky 0, který emulátor uloží pouze tehdy, když byl úspěšně připojen.
+ROM se nikdy nemění. Všechny připojené zapisovatelné diskové obrazy se při ukončení
+uloží pouze tehdy, pokud byly změněny.
