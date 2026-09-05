@@ -1,0 +1,56 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "linux-release",
+      "displayName": "Linux desktop release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "VZ256_BUILD_APP": "ON",
+        "VZ256_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "linux-core",
+      "displayName": "Linux headless core",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-core",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "VZ256_BUILD_APP": "OFF",
+        "VZ256_BUILD_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release",
+      "jobs": 2
+    },
+    {
+      "name": "linux-core",
+      "configurePreset": "linux-core",
+      "jobs": 2
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux-core",
+      "configurePreset": "linux-core",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

@@ -42,6 +42,39 @@ cmake --build build
 ./build/vz256 --resources .
 ```
 
+### Ubuntu 24.04 a Raspberry Pi OS
+
+Pro Ubuntu 24.04 na x86-64 i ARM64 a aktuální Raspberry Pi OS na Raspberry Pi 4/5
+je připraven instalační skript a CMake preset. Skript používá pouze `apt` a nainstaluje
+překladač, Ninja a vývojové knihovny potřebné pro SDL3:
+
+```sh
+git clone https://github.com/omikron88/Vzlet-Z256.git
+cd Vzlet-Z256
+sudo ./scripts/install-linux-deps.sh
+cmake --preset linux-release
+cmake --build --preset linux-release
+ctest --preset linux-release
+./build/linux-release/vz256 --resources .
+```
+
+SDL3, Z80 a Zeta se stáhnou v připnutých verzích při konfiguraci, takže není nutný
+systémový balíček SDL3. Stejný postup funguje na 64bitovém Raspberry Pi OS. Na
+32bitovém systému lze projekt rovněž sestavit nativně; kvůli delšímu překladu SDL3
+je vhodné ponechat paralelismus presetu omezený na dvě úlohy.
+
+Pro server, CI nebo Raspberry Pi bez grafického prostředí lze sestavit pouze jádro:
+
+```sh
+cmake --preset linux-core
+cmake --build --preset linux-core
+ctest --preset linux-core
+```
+
+GitHub Actions ověřuje plné sestavení, všechny testy a headless spuštění SDL aplikace
+na Ubuntu 24.04 pro amd64 i arm64. ARM64 sestavení používá stejné ABI a závislosti
+jako 64bitový Raspberry Pi OS.
+
 Obrazy a geometrie všech mechanik lze zadat samostatně (písmena `a` až `d`):
 
 ```sh

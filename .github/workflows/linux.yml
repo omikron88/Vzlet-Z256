@@ -1,0 +1,33 @@
+name: Linux
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu 24.04 amd64
+            runner: ubuntu-24.04
+          - name: Ubuntu 24.04 arm64 (Raspberry Pi compatible)
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dependencies
+        run: sudo ./scripts/install-linux-deps.sh
+      - name: Configure
+        run: cmake --preset linux-release
+      - name: Build
+        run: cmake --build --preset linux-release
+      - name: Test
+        run: ctest --preset linux-release
+      - name: Smoke test SDL frontend
+        run: SDL_VIDEODRIVER=dummy timeout 2s ./build/linux-release/vz256 --resources . || test $? -eq 124
