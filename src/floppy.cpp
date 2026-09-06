@@ -57,6 +57,17 @@ bool FloppyImage::load(const std::filesystem::path& path, FloppyGeometry geometr
     return true;
 }
 
+bool FloppyImage::load(std::span<const std::uint8_t> bytes, FloppyGeometry geometry) {
+    if (!geometry.valid() || bytes.size() != geometry.image_size()) return false;
+    path_ = "<embedded boot.img>";
+    bytes_.assign(bytes.begin(), bytes.end());
+    geometry_ = std::move(geometry);
+    storage_writable_ = false;
+    write_protected_ = true;
+    dirty_ = false;
+    return true;
+}
+
 bool FloppyImage::save() const {
     if (!mounted() || write_protected_) return false;
     auto temporary = path_;

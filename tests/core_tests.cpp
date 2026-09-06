@@ -24,6 +24,13 @@ int main() {
     memory_rom_machine.reset();
     assert(memory_rom_machine.read(0) == 0x42);
     assert(memory_rom_machine.read(2) == 0x42);
+    std::array<std::uint8_t, 128> embedded_disk{};
+    embedded_disk[0] = 0xc3;
+    const vz256::FloppyGeometry embedded_geometry{"embedded-test", 1, 1, 1, 128,
+                                                   vz256::FloppyEncoding::fm};
+    assert(memory_rom_machine.drive(0).load(embedded_disk, embedded_geometry));
+    assert(memory_rom_machine.drive(0).write_protected());
+    assert(memory_rom_machine.drive(0).sector(0, 0, 1).front() == 0xc3);
     machine.reset();
     assert(machine.read(0) == 0x42);
     assert(machine.read(2) == 0x42); // short ROM is mirrored

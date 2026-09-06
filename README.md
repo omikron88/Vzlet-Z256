@@ -89,11 +89,28 @@ ctest --preset linux-static
 ./build/linux-static/vz256
 ```
 
-Takto vytvořený program pro spuštění nepotřebuje adresář `roms` ani parametr
-`--resources`. Diskový obraz není součástí programu, protože musí zůstat samostatně
-zapisovatelný; lze jej zadat parametrem `--drive-a`, nebo později připojit přes dialog
-mechanik. Pokud je program spuštěn v kořeni projektu, použije jako dříve výchozí
-`disks/boot.img`.
+Takto vytvořený program pro spuštění nepotřebuje adresář `roms`, parametr
+`--resources` ani samostatný bootovací obraz. Statická varianta obsahuje také výchozí
+bootovací disk, ze kterého CP/M nabootuje v režimu pouze pro čtení. Pokud je program
+spuštěn v kořeni projektu, může použít zapisovatelný `disks/boot.img`; jiný zapisovatelný
+obraz lze zadat parametrem `--drive-a` nebo připojit přes dialog mechanik.
+
+#### Windows x64
+
+Na Windows lze ze „Developer PowerShell for VS 2022“ vytvořit jediný přenositelný
+`vz256.exe` pomocí stejné statické varianty:
+
+```powershell
+cmake --preset windows-static
+cmake --build --preset windows-static
+ctest --preset windows-static
+.\build\windows-static\Release\vz256.exe
+```
+
+Program obsahuje monitorovou ROM, znakovou ROM, výchozí bootovací disk, SDL3, Z80,
+Zeta a statický MSVC runtime (`/MT`). Nepotřebuje tedy DLL těchto knihoven ani další
+datové soubory. Nadále používá standardní systémové DLL dodávané s Windows. Vlastní
+zapisovatelné obrazy disket zůstávají volitelnými externími soubory.
 
 Obrazy a geometrie všech mechanik lze zadat samostatně (písmena `a` až `d`):
 

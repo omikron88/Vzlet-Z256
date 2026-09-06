@@ -45,7 +45,7 @@ jobs:
         run: cmake --build --preset linux-static
       - name: Test
         run: ctest --preset linux-static
-      - name: Verify embedded ROM startup without resource directory
+      - name: Verify embedded ROM and boot disk startup without resource directory
         run: |
           cd /tmp
           SDL_VIDEODRIVER=dummy timeout 2s "$GITHUB_WORKSPACE/build/linux-static/vz256" || test $? -eq 124

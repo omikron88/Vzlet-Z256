@@ -57,6 +57,7 @@ public:
     bool load(const std::filesystem::path& path, bool force_read_only = false);
     bool load(const std::filesystem::path& path, FloppyGeometry geometry,
               bool force_read_only = false);
+    bool load(std::span<const std::uint8_t> bytes, FloppyGeometry geometry);
     bool save() const;
     void eject();
     [[nodiscard]] bool mounted() const { return !bytes_.empty(); }

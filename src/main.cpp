@@ -185,6 +185,15 @@ int main(int argc, char** argv) {
         return 1;
     }
 #endif
+#ifdef VZ256_EMBEDDED_ROMS
+    if (!options.image_set[0]) {
+        if (!machine.drive(0).load(vz256::embedded_boot_disk(),
+                                   vz256::floppy_geometries::five_25_dsdd_80)) {
+            std::cerr << "Unable to load embedded boot disk\n";
+            return 1;
+        }
+    }
+#endif
     if (!options.image_set[0] && std::filesystem::exists(options.resources / "disks/boot.img")) {
         options.images[0] = options.resources / "disks/boot.img";
         options.image_set[0] = true;

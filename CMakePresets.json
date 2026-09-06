@@ -40,6 +40,19 @@
         "VZ256_FETCH_SDL3": "ON",
         "VZ256_STATIC_BUNDLE": "ON"
       }
+    },
+    {
+      "name": "windows-static",
+      "displayName": "Windows self-contained executable",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/windows-static",
+      "cacheVariables": {
+        "VZ256_BUILD_APP": "ON",
+        "VZ256_BUILD_TESTS": "ON",
+        "VZ256_FETCH_SDL3": "ON",
+        "VZ256_STATIC_BUNDLE": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -57,6 +70,12 @@
       "name": "linux-static",
       "configurePreset": "linux-static",
       "jobs": 2
+    },
+    {
+      "name": "windows-static",
+      "configurePreset": "windows-static",
+      "configuration": "Release",
+      "jobs": 2
     }
   ],
   "testPresets": [
@@ -73,6 +92,12 @@
     {
       "name": "linux-static",
       "configurePreset": "linux-static",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-static",
+      "configurePreset": "windows-static",
+      "configuration": "Release",
       "output": { "outputOnFailure": true }
     }
   ]

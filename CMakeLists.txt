@@ -6,6 +6,11 @@ option(VZ256_BUILD_TESTS "Build unit tests" ON)
 option(VZ256_FETCH_SDL3 "Download SDL3 when no system package is available" ON)
 option(VZ256_STATIC_BUNDLE "Statically link bundled libraries and embed ROM files" OFF)
 
+if(VZ256_STATIC_BUNDLE AND MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        CACHE STRING "Use the static MSVC runtime" FORCE)
+endif()
+
 add_library(vz256_core
     src/machine.cpp
     src/video.cpp
@@ -59,11 +64,13 @@ if(VZ256_BUILD_APP)
 
     add_executable(vz256 src/main.cpp src/redcode_cpu.cpp)
     if(VZ256_STATIC_BUNDLE)
-        foreach(resource MONITOR_ROM CHARACTER_ROM)
+        foreach(resource MONITOR_ROM CHARACTER_ROM BOOT_DISK)
             if(resource STREQUAL "MONITOR_ROM")
                 set(resource_path "${CMAKE_SOURCE_DIR}/roms/boot.rom")
-            else()
+            elseif(resource STREQUAL "CHARACTER_ROM")
                 set(resource_path "${CMAKE_SOURCE_DIR}/roms/char.rom")
+            else()
+                set(resource_path "${CMAKE_SOURCE_DIR}/disks/boot.img")
             endif()
             file(READ "${resource_path}" ${resource}_HEX HEX)
             string(LENGTH "${${resource}_HEX}" resource_hex_length)
@@ -89,16 +96,22 @@ if(VZ256_BUILD_TESTS)
     enable_testing()
     add_executable(vz256_tests tests/core_tests.cpp)
     target_link_libraries(vz256_tests PRIVATE vz256_core)
-    target_compile_options(vz256_tests PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang>:-UNDEBUG>)
+    target_compile_options(vz256_tests PRIVATE
+        $<$<CXX_COMPILER_ID:GNU,Clang>:-UNDEBUG>
+        $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
     add_test(NAME core COMMAND vz256_tests)
     if(VZ256_BUILD_APP)
         add_executable(vz256_cpu_tests tests/cpu_tests.cpp src/redcode_cpu.cpp)
         target_link_libraries(vz256_cpu_tests PRIVATE vz256_core Z80)
-        target_compile_options(vz256_cpu_tests PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang>:-UNDEBUG>)
+        target_compile_options(vz256_cpu_tests PRIVATE
+            $<$<CXX_COMPILER_ID:GNU,Clang>:-UNDEBUG>
+            $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
         add_test(NAME cpu_bus COMMAND vz256_cpu_tests)
         add_executable(vz256_boot_tests tests/boot_tests.cpp src/redcode_cpu.cpp)
         target_link_libraries(vz256_boot_tests PRIVATE vz256_core Z80)
-        target_compile_options(vz256_boot_tests PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang>:-UNDEBUG>)
+        target_compile_options(vz256_boot_tests PRIVATE
+            $<$<CXX_COMPILER_ID:GNU,Clang>:-UNDEBUG>
+            $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
         add_test(NAME boot_disk COMMAND vz256_boot_tests "${CMAKE_SOURCE_DIR}")
     endif()
 endif()

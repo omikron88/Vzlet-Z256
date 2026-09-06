@@ -7,10 +7,12 @@ namespace {
 
 constexpr std::array<std::uint8_t, @MONITOR_ROM_SIZE@> monitor_rom{@MONITOR_ROM_BYTES@};
 constexpr std::array<std::uint8_t, @CHARACTER_ROM_SIZE@> character_rom{@CHARACTER_ROM_BYTES@};
+constexpr std::array<std::uint8_t, @BOOT_DISK_SIZE@> boot_disk{@BOOT_DISK_BYTES@};
 
 } // namespace
 
 std::span<const std::uint8_t> embedded_monitor_rom() { return monitor_rom; }
 std::span<const std::uint8_t> embedded_character_rom() { return character_rom; }
+std::span<const std::uint8_t> embedded_boot_disk() { return boot_disk; }
 
 } // namespace vz256
