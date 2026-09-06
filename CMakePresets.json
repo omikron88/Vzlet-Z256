@@ -27,6 +27,19 @@
         "VZ256_BUILD_APP": "OFF",
         "VZ256_BUILD_TESTS": "ON"
       }
+    },
+    {
+      "name": "linux-static",
+      "displayName": "Linux static bundle",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-static",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "VZ256_BUILD_APP": "ON",
+        "VZ256_BUILD_TESTS": "ON",
+        "VZ256_FETCH_SDL3": "ON",
+        "VZ256_STATIC_BUNDLE": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -39,6 +52,11 @@
       "name": "linux-core",
       "configurePreset": "linux-core",
       "jobs": 2
+    },
+    {
+      "name": "linux-static",
+      "configurePreset": "linux-static",
+      "jobs": 2
     }
   ],
   "testPresets": [
@@ -50,6 +68,11 @@
     {
       "name": "linux-core",
       "configurePreset": "linux-core",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux-static",
+      "configurePreset": "linux-static",
       "output": { "outputOnFailure": true }
     }
   ]

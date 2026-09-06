@@ -18,6 +18,8 @@ public:
 
     bool load_roms(const std::filesystem::path& monitor,
                    const std::filesystem::path& characters);
+    bool load_roms(std::span<const std::uint8_t> monitor,
+                   std::span<const std::uint8_t> characters);
     void reset();
 
     std::uint8_t read(std::uint16_t address, bool opcode = false) const;

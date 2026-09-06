@@ -75,6 +75,26 @@ GitHub Actions ověřuje plné sestavení, všechny testy a headless spuštění
 na Ubuntu 24.04 pro amd64 i arm64. ARM64 sestavení používá stejné ABI a závislosti
 jako 64bitový Raspberry Pi OS.
 
+### Statický balíček
+
+Preset `linux-static` vloží monitorovou i znakovou ROM přímo do programu a staticky
+přilinkuje SDL3, Z80, Zeta a při použití GCC také jeho C++ runtime. Dynamické
+zůstávají pouze systémové knihovny Linuxu
+(například `libc`, grafický ovladač a knihovny X11/Wayland načítané systémem):
+
+```sh
+cmake --preset linux-static
+cmake --build --preset linux-static
+ctest --preset linux-static
+./build/linux-static/vz256
+```
+
+Takto vytvořený program pro spuštění nepotřebuje adresář `roms` ani parametr
+`--resources`. Diskový obraz není součástí programu, protože musí zůstat samostatně
+zapisovatelný; lze jej zadat parametrem `--drive-a`, nebo později připojit přes dialog
+mechanik. Pokud je program spuštěn v kořeni projektu, použije jako dříve výchozí
+`disks/boot.img`.
+
 Obrazy a geometrie všech mechanik lze zadat samostatně (písmena `a` až `d`):
 
 ```sh

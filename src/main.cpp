@@ -1,4 +1,7 @@
 #include "vz256/cpu.hpp"
+#ifdef VZ256_EMBEDDED_ROMS
+#include "vz256/embedded_resources.hpp"
+#endif
 #include "vz256/machine.hpp"
 
 #include <SDL3/SDL.h>
@@ -169,11 +172,19 @@ int main(int argc, char** argv) {
     }
 
     vz256::Machine machine;
+#ifdef VZ256_EMBEDDED_ROMS
+    if (!machine.load_roms(vz256::embedded_monitor_rom(),
+                           vz256::embedded_character_rom())) {
+        std::cerr << "Unable to load embedded ROMs\n";
+        return 1;
+    }
+#else
     if (!machine.load_roms(options.resources / "roms/boot.rom",
                            options.resources / "roms/char.rom")) {
         std::cerr << "Unable to load boot and character ROMs from " << options.resources << '\n';
         return 1;
     }
+#endif
     if (!options.image_set[0] && std::filesystem::exists(options.resources / "disks/boot.img")) {
         options.images[0] = options.resources / "disks/boot.img";
         options.image_set[0] = true;

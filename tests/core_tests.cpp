@@ -17,6 +17,13 @@ int main() {
 
     vz256::Machine machine;
     assert(machine.load_roms(temp / "monitor.rom", temp / "char.rom"));
+    vz256::Machine memory_rom_machine;
+    const std::array<std::uint8_t, 2> monitor_data{0x42, 0x24};
+    const std::array<std::uint8_t, 1> character_data{0x5a};
+    assert(memory_rom_machine.load_roms(monitor_data, character_data));
+    memory_rom_machine.reset();
+    assert(memory_rom_machine.read(0) == 0x42);
+    assert(memory_rom_machine.read(2) == 0x42);
     machine.reset();
     assert(machine.read(0) == 0x42);
     assert(machine.read(2) == 0x42); // short ROM is mirrored

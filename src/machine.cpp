@@ -19,6 +19,15 @@ bool read_file(const std::filesystem::path& path, std::span<std::uint8_t> destin
     return true;
 }
 
+bool copy_mirrored(std::span<const std::uint8_t> source,
+                   std::span<std::uint8_t> destination) {
+    if (source.empty() || source.size() > destination.size()) return false;
+    for (std::size_t i = 0; i < destination.size(); ++i) {
+        destination[i] = source[i % source.size()];
+    }
+    return true;
+}
+
 } // namespace
 
 bool Machine::load_roms(const std::filesystem::path& monitor,
@@ -30,6 +39,15 @@ bool Machine::load_roms(const std::filesystem::path& monitor,
                video_.set_character_rom(data);
                return true;
            })();
+}
+
+bool Machine::load_roms(std::span<const std::uint8_t> monitor,
+                        std::span<const std::uint8_t> characters) {
+    std::array<std::uint8_t, 8192> character_data{};
+    if (!copy_mirrored(monitor, monitor_rom_) ||
+        !copy_mirrored(characters, character_data)) return false;
+    video_.set_character_rom(character_data);
+    return true;
 }
 
 void Machine::reset() {
