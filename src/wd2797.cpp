@@ -89,6 +89,13 @@ void Wd2797::write(std::uint8_t reg, std::uint8_t value,
 }
 
 bool Wd2797::begin_sector(std::array<FloppyImage, 4>& drives, std::uint8_t drive) {
+    if (!drives[drive].mounted()) {
+        status_ = not_ready;
+        transfer_ = Transfer::none;
+        drq_ = false;
+        intrq_ = true;
+        return false;
+    }
     const auto bytes = drives[drive].sector(track_, side_, sector_);
     if (bytes.empty()) {
         status_ = record_not_found;
@@ -167,6 +174,11 @@ void Wd2797::command(std::uint8_t value, std::array<FloppyImage, 4>& drives,
     side_ = static_cast<std::uint8_t>((value >> 1U) & 1U);
     type_one_status_ = false;
     multiple_ = (value & 0x10U) != 0;
+    if (!drives[drive].mounted()) {
+        status_ = not_ready;
+        intrq_ = true;
+        return;
+    }
     if ((type & 0xC0U) == 0x80U) {
         transfer_ = (value & 0x20U) != 0 ? Transfer::write : Transfer::read;
         begin_sector(drives, drive);

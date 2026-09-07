@@ -17,6 +17,8 @@ SDL 3 pro okno, vstup a výstup obrazu a procesorové jádro
   a SDL mapování Ctrl, kurzorových a speciálních kláves,
 - WD2797 s příkazy Restore/Seek/Step, Read/Write Sector, multi-sector přenosem,
   Read Address, Force Interrupt a signály DRQ/INTRQ přes Z80 PIO B,
+- časový limit diskových operací přes kanál 3 CPU CTC, takže přístup k prázdné
+  mechanice skončí chybou BIOSu namísto trvalého čekání,
 - adaptér procesoru redcode/Z80, real-time smyčka na 4 MHz, reset klávesou **F12**
   a automatické načtení dodaných ROM/disku.
 

@@ -165,6 +165,23 @@ int main() {
     assert(machine.drive(0).write_protected());
     assert(!machine.drive(0).write_sector(0, 0, 1, replacement));
 
+    // With no medium, the WD2797 completes with NOT READY and the BIOS floppy
+    // timeout on CPU CTC channel 3 eventually releases its HALT transfer loop.
+    machine.drive(0).eject();
+    machine.output(0xd0, 0x88);
+    const auto empty_status = machine.input(0xd0);
+    assert((empty_status & vz256::Wd2797::not_ready) != 0);
+    assert((empty_status & vz256::Wd2797::busy) == 0);
+    machine.output(0xf4, 0x80); // CTC vector base
+    machine.output(0xf7, 0xc7); // interrupt, counter, constant follows, reset
+    machine.output(0xf7, 1);    // one 10 ms channel-2 pulse
+    machine.tick(vz256::Machine::cpu_hz / 100U - 1);
+    assert(!machine.interrupt_pending());
+    machine.tick(1);
+    assert(machine.interrupt_pending());
+    assert(machine.interrupt_vector() == 0x86);
+    assert(!machine.interrupt_pending());
+
     // The double-sided 8-inch layout has the IBM 3740 77x26x128 organization
     // on both sides. Exercise auto-detection and side selection through the
     // WD2797, not just direct FloppyImage access.

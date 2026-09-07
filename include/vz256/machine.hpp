@@ -27,9 +27,9 @@ public:
     std::uint8_t input(std::uint16_t port);
     void output(std::uint16_t port, std::uint8_t value);
     void key(std::uint8_t ascii);
-    void tick(std::uint32_t cycles) { fdc_.tick(cycles); }
+    void tick(std::uint32_t cycles);
     [[nodiscard]] bool interrupt_pending() const;
-    [[nodiscard]] std::uint8_t interrupt_vector() const;
+    [[nodiscard]] std::uint8_t interrupt_vector();
 
     [[nodiscard]] Video& video() { return video_; }
     [[nodiscard]] FloppyImage& drive(std::size_t index) { return drives_.at(index); }
@@ -55,6 +55,12 @@ private:
     bool pio_b_expect_direction_{};
     bool pio_b_expect_interrupt_mask_{};
     bool motor_timer_phase_{};
+    std::uint8_t ctc_vector_{};
+    bool ctc3_expect_constant_{};
+    bool ctc3_interrupt_enabled_{};
+    bool ctc3_interrupt_pending_{};
+    std::uint32_t ctc3_period_cycles_{};
+    std::uint32_t ctc3_cycles_{};
 };
 
 } // namespace vz256

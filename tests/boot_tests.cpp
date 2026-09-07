@@ -36,4 +36,13 @@ int main(int argc, char** argv) {
     assert(!machine.interrupt_pending());
     machine.video().render(after);
     assert(before != after);
+
+    // Selecting empty drive B must time out through CTC channel 3 and return
+    // to CP/M with an error instead of remaining forever in the BIOS HALT loop.
+    before = after;
+    for (const auto key : {'B', ':', '\r'}) machine.key(static_cast<std::uint8_t>(key));
+    cpu.run(40'000'000);
+    assert(cpu.program_counter() >= 0xFAE1 && cpu.program_counter() <= 0xFAE6);
+    machine.video().render(after);
+    assert(before != after);
 }
