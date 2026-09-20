@@ -12,6 +12,24 @@ int main() {
     namespace fs = std::filesystem;
     const auto temp = fs::temp_directory_path() / "vz256-core-test";
     fs::create_directories(temp);
+
+    vz256::Ctc ctc;
+    ctc.reset();
+    ctc.write(0, 0x80); // IM2 vector base
+    ctc.write(0, 0x85); // timer, interrupt enabled, constant follows
+    ctc.write(0, 2);
+    ctc.tick(31);
+    assert(!ctc.interrupt_pending());
+    ctc.tick(1);
+    assert(ctc.interrupt_pending());
+    assert(ctc.interrupt_acknowledge() == 0x80);
+    ctc.write(1, 0xc5); // counter, interrupt enabled, constant follows
+    ctc.write(1, 2);
+    ctc.trigger(1);
+    assert(ctc.read(1) == 1);
+    ctc.trigger(1);
+    assert(ctc.interrupt_pending());
+    assert(ctc.interrupt_acknowledge() == 0x82);
     { std::ofstream f(temp / "monitor.rom", std::ios::binary); f.put('\x42'); f.put('\x24'); }
     { std::ofstream f(temp / "char.rom", std::ios::binary); f.put('\x5a'); }
 
@@ -173,9 +191,11 @@ int main() {
     assert((empty_status & vz256::Wd2797::not_ready) != 0);
     assert((empty_status & vz256::Wd2797::busy) == 0);
     machine.output(0xf4, 0x80); // CTC vector base
+    machine.output(0xf6, 0x27); // channel 2 timer, prescaler 256, constant follows
+    machine.output(0xf6, 156);  // approximately 10 ms at 4 MHz
     machine.output(0xf7, 0xc7); // interrupt, counter, constant follows, reset
-    machine.output(0xf7, 1);    // one 10 ms channel-2 pulse
-    machine.tick(vz256::Machine::cpu_hz / 100U - 1);
+    machine.output(0xf7, 1);    // one channel-2 terminal count
+    machine.tick(256U * 156U - 1U);
     assert(!machine.interrupt_pending());
     machine.tick(1);
     assert(machine.interrupt_pending());

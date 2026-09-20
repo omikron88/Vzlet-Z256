@@ -12,6 +12,7 @@ if(VZ256_STATIC_BUNDLE AND MSVC)
 endif()
 
 add_library(vz256_core
+    src/ctc.cpp
     src/machine.cpp
     src/video.cpp
     src/floppy.cpp

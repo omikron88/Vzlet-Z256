@@ -1,6 +1,7 @@
 #pragma once
 
 #include "vz256/floppy.hpp"
+#include "vz256/ctc.hpp"
 #include "vz256/video.hpp"
 #include "vz256/wd2797.hpp"
 
@@ -54,13 +55,7 @@ private:
     bool pio_b_interrupt_enabled_{};
     bool pio_b_expect_direction_{};
     bool pio_b_expect_interrupt_mask_{};
-    bool motor_timer_phase_{};
-    std::uint8_t ctc_vector_{};
-    bool ctc3_expect_constant_{};
-    bool ctc3_interrupt_enabled_{};
-    bool ctc3_interrupt_pending_{};
-    std::uint32_t ctc3_period_cycles_{};
-    std::uint32_t ctc3_cycles_{};
+    Ctc cpu_ctc_;
 };
 
 } // namespace vz256

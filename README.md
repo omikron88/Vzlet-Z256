@@ -19,6 +19,8 @@ SDL 3 pro okno, vstup a výstup obrazu a procesorové jádro
   Read Address, Force Interrupt a signály DRQ/INTRQ přes Z80 PIO B,
 - časový limit diskových operací přes kanál 3 CPU CTC, takže přístup k prázdné
   mechanice skončí chybou BIOSu namísto trvalého čekání,
+- čtyřkanálový CPU Z80 CTC v režimu timer/counter, prescalery 16/256, čtení
+  čítače, kaskáda kanálů 2→3 a vektorovaná přerušení IM2,
 - adaptér procesoru redcode/Z80, real-time smyčka na 4 MHz, reset klávesou **F12**
   a automatické načtení dodaných ROM/disku.
 
@@ -28,8 +30,8 @@ výběr souboru, **S** obraz uloží, **E** jej vysune a **W** přepíná ochran
 zápisu. U změněného obrazu je před vysunutím nutné změny uložit nebo výslovně
 zahodit. Zápis obrazu používá dočasný soubor a atomické přejmenování.
 
-PIO, SIO a CTC mají připravené dekódování sběrnice, ale jejich úplné stavové automaty,
-přerušovací daisy-chain a přesné časování jsou další etapou. Tento stav je záměrně
+PIO, SIO a druhý CTC na FDC desce mají připravené dekódování sběrnice, ale jejich
+úplné stavové automaty a přerušovací daisy-chain jsou další etapou. Tento stav je záměrně
 oddělen od paměťového a obrazového jádra, které lze testovat bez SDL.
 
 ## Sestavení
@@ -148,7 +150,7 @@ návrat na další prompt.
 ## Návrh dalších etap
 
 1. WD2797: doplnit Read/Write Track, CRC a reálné rotační časování.
-2. Z80 PIO/CTC/SIO: režimy, vektory IM2 a dva prioritní řetězce podle specifikace.
+2. Z80 PIO/FDC CTC/SIO: režimy, vektory IM2 a dva prioritní řetězce podle specifikace.
 3. MC6845: odvozovat počáteční adresu a časování snímku z registrů namísto pevného rastru.
 4. TCP sériové linky, tisk do souboru, magnetofonní WAV a debugger CPU/paměti.
 
