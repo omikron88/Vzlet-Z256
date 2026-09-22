@@ -30,6 +30,14 @@ void Video::set_character_rom(std::span<const std::uint8_t> data) {
     for (std::size_t i = 0; i < chars_.size(); ++i) chars_[i] = data[i % data.size()];
 }
 
+void Video::tick(std::uint32_t cycles) {
+    // The standard video mode is approximately 50 Hz at the 4 MHz CPU clock.
+    constexpr std::uint32_t cycles_per_frame = 80'000;
+    cursor_frame_cycles_ += cycles;
+    cursor_frame_ += cursor_frame_cycles_ / cycles_per_frame;
+    cursor_frame_cycles_ %= cycles_per_frame;
+}
+
 std::uint16_t Video::display_address(std::uint16_t ma, std::uint8_t raster) {
     // The video board does not store scan lines consecutively. MC6845 MA0..7
     // drive RAM A0..7, RA0..3 drive A8..11 and MA8..11 drive A12..15. The
@@ -50,19 +58,33 @@ void Video::render(std::span<std::uint32_t> rgba) const {
     const auto active_height = std::min<unsigned>(rows * scanlines, height);
     const auto start = static_cast<std::uint16_t>(
         ((static_cast<std::uint16_t>(crtc_[12] & 0x3FU) << 8U) | crtc_[13]) & 0x3FFFU);
+    const auto cursor_address = static_cast<std::uint16_t>(
+        ((static_cast<std::uint16_t>(crtc_[14] & 0x3FU) << 8U) | crtc_[15]) & 0x3FFFU);
+    const auto cursor_start = static_cast<unsigned>(crtc_[10] & 0x1FU);
+    const auto cursor_end = static_cast<unsigned>(crtc_[11] & 0x1FU);
+    const auto cursor_mode = static_cast<unsigned>((crtc_[10] >> 5U) & 3U);
+    const bool cursor_phase = cursor_mode == 0U ||
+                              (cursor_mode == 2U && ((cursor_frame_ / 16U) & 1U) == 0U) ||
+                              (cursor_mode == 3U && ((cursor_frame_ / 32U) & 1U) == 0U);
 
     for (unsigned y = 0; y < active_height; ++y) {
         const auto character_row = y / scanlines;
         const auto raster = static_cast<std::uint8_t>(y % scanlines);
+        const bool cursor_raster = cursor_start <= cursor_end
+            ? raster >= cursor_start && raster <= cursor_end
+            : raster >= cursor_start || raster <= cursor_end;
         const auto row_ma = static_cast<std::uint16_t>(
             (start + character_row * columns) & 0x3FFFU);
         for (unsigned byte_x = 0; byte_x < columns; ++byte_x) {
+            const auto ma = static_cast<std::uint16_t>((row_ma + byte_x) & 0x3FFFU);
             const auto address = display_address(
-                static_cast<std::uint16_t>((row_ma + byte_x) & 0x3FFFU), raster);
+                ma, raster);
+            const bool cursor = cursor_phase && cursor_raster && ma == cursor_address;
             for (int bit = 0; bit < 8; ++bit) {
                 const auto mask = static_cast<std::uint8_t>(0x80U >> bit);
-                const unsigned color = ((high_[address] & mask) ? 2U : 0U) |
-                                       ((low_[address] & mask) ? 1U : 0U);
+                const unsigned color = cursor ? 3U :
+                    ((high_[address] & mask) ? 2U : 0U) |
+                    ((low_[address] & mask) ? 1U : 0U);
                 const std::uint32_t gray = levels[color];
                 rgba[static_cast<std::size_t>(y * width + byte_x * 8U + static_cast<unsigned>(bit))] =
                     0xFF000000U | (gray << 16U) | (gray << 8U) | gray;
@@ -74,6 +96,8 @@ void Video::render(std::span<std::uint32_t> rgba) const {
 void Video::reset() {
     crtc_.fill(0);
     crtc_index_ = 0;
+    cursor_frame_cycles_ = 0;
+    cursor_frame_ = 0;
 }
 
 } // namespace vz256

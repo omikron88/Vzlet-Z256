@@ -12,6 +12,8 @@ SDL 3 pro okno, vstup a výstup obrazu a procesorové jádro
 - sekundární stránkování `0xC0–0xCF`, 128 KiB planární VRAM a paměťové registry MC6845,
 - převod dvou bitových rovin na 640×300 ve čtyřech odstínech šedi, včetně
   adresního prokládání MA/RA a počáteční adresy obrazu řízené MC6845,
+- hardwarový kurzor MC6845 řízený registry R10/R11/R14/R15, včetně vypnutí,
+  obtékajícího rozsahu rastrových řádků a režimů blikání po 16 nebo 32 snímcích,
 - obrazy disket s konfigurovatelnou geometrií a sektory 128, 256 nebo 512 bajtů,
 - paralelní aktivně nízká ASCII klávesnice přes PIO A, ASTB přerušení, fronta znaků
   a SDL mapování Ctrl, kurzorových a speciálních kláves,
@@ -151,7 +153,7 @@ návrat na další prompt.
 
 1. WD2797: doplnit Read/Write Track, CRC a reálné rotační časování.
 2. Z80 PIO/FDC CTC/SIO: režimy, vektory IM2 a dva prioritní řetězce podle specifikace.
-3. MC6845: odvozovat počáteční adresu a časování snímku z registrů namísto pevného rastru.
+3. MC6845: odvozovat přesné horizontální a vertikální časování snímku z registrů.
 4. TCP sériové linky, tisk do souboru, magnetofonní WAV a debugger CPU/paměti.
 
 ROM se nikdy nemění. Všechny připojené zapisovatelné diskové obrazy se při ukončení

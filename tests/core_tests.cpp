@@ -71,6 +71,8 @@ int main() {
     machine.video().write(3, 1, 24);
     machine.video().write(3, 0, 9);  // R9: scanlines per character - 1
     machine.video().write(3, 1, 11);
+    machine.video().write(3, 0, 10); // R10: cursor disabled for address tests
+    machine.video().write(3, 1, 0x20);
     machine.output(0xfc, 0x80 | 0x01 | (1 << 2));
     machine.write(0x8000, 0x80);
     machine.write(0x8100, 0x40); // next raster line is 0x100 bytes away
@@ -89,6 +91,34 @@ int main() {
     machine.write(0x9000, 0x20);
     machine.video().render(pixels);
     assert(pixels[2] == 0xffaaaaaaU);
+
+    // MC6845 R10/R11 define cursor raster lines and R14/R15 its display
+    // address. A steady cursor forces the complete character cell to white.
+    machine.video().write(3, 0, 1);
+    machine.video().write(3, 1, 2);
+    machine.video().write(3, 0, 6);
+    machine.video().write(3, 1, 1);
+    machine.video().write(3, 0, 12);
+    machine.video().write(3, 1, 0);
+    machine.video().write(3, 0, 13);
+    machine.video().write(3, 1, 0);
+    machine.video().write(3, 0, 14);
+    machine.video().write(3, 1, 0);
+    machine.video().write(3, 0, 15);
+    machine.video().write(3, 1, 1);
+    machine.video().write(3, 0, 10);
+    machine.video().write(3, 1, 10); // steady, starts on raster 10
+    machine.video().write(3, 0, 11);
+    machine.video().write(3, 1, 11);
+    machine.video().render(pixels);
+    assert(pixels[9 * vz256::Video::width + 8] == 0xff000000U);
+    assert(pixels[10 * vz256::Video::width + 8] == 0xffffffffU);
+    assert(pixels[11 * vz256::Video::width + 15] == 0xffffffffU);
+    machine.video().write(3, 0, 10);
+    machine.video().write(3, 1, 0x4a); // blink every 16 frames, raster 10
+    machine.video().tick(16U * 80'000U);
+    machine.video().render(pixels);
+    assert(pixels[10 * vz256::Video::width + 8] == 0xff000000U);
 
     machine.output(0xd7, 0x88); // PIO base vector: channel A uses 0x8a
     machine.output(0xd6, 0x83); // enable keyboard interrupt

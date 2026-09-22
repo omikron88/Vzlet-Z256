@@ -68,6 +68,7 @@ void Machine::reset() {
 void Machine::tick(std::uint32_t cycles) {
     fdc_.tick(cycles);
     cpu_ctc_.tick(cycles);
+    video_.tick(cycles);
 }
 
 std::uint8_t Machine::page_for_read(bool opcode) const {

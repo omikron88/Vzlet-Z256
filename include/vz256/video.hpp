@@ -15,6 +15,7 @@ public:
     std::uint8_t read(std::uint8_t bank, std::uint16_t address) const;
     void write(std::uint8_t bank, std::uint16_t address, std::uint8_t value);
     void set_character_rom(std::span<const std::uint8_t> data);
+    void tick(std::uint32_t cycles);
     void render(std::span<std::uint32_t> rgba) const;
     void reset();
 
@@ -27,6 +28,8 @@ private:
     std::array<std::uint8_t, 8192> chars_{};
     std::array<std::uint8_t, 32> crtc_{};
     std::uint8_t crtc_index_{};
+    std::uint32_t cursor_frame_cycles_{};
+    std::uint64_t cursor_frame_{};
 };
 
 } // namespace vz256
