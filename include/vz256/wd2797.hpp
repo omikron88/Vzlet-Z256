@@ -33,11 +33,12 @@ public:
     [[nodiscard]] bool idle() const { return transfer_ == Transfer::none; }
 
 private:
-    enum class Transfer { none, read, write, read_address };
+    enum class Transfer { none, read, write, read_address, read_track };
 
     void command(std::uint8_t value, std::array<FloppyImage, 4>& drives,
                  std::uint8_t drive);
     bool begin_sector(std::array<FloppyImage, 4>& drives, std::uint8_t drive);
+    bool begin_read_track(std::array<FloppyImage, 4>& drives, std::uint8_t drive);
     void finish_sector(std::array<FloppyImage, 4>& drives, std::uint8_t drive);
     [[nodiscard]] std::uint8_t status(std::array<FloppyImage, 4>& drives,
                                       std::uint8_t drive);

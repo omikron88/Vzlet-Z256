@@ -195,6 +195,10 @@ int main() {
     assert(machine.input(0xd3) == 26);
     machine.tick(128);
     assert(machine.input(0xd3) == 0); // WD2797 N=0 means 128 bytes
+    machine.tick(128);
+    assert(machine.input(0xd3) == 0x2c); // CRC-16 of FE C H R N in FM
+    machine.tick(128);
+    assert(machine.input(0xd3) == 0xe4);
 
     std::array<std::uint8_t, 128> replacement{};
     replacement[0] = 0xa9;
@@ -290,6 +294,36 @@ int main() {
     assert(machine.input(0xd3) == 26);
     machine.tick(64);
     assert(machine.input(0xd3) == 1); // WD2797 N=1 means 256 bytes
+    machine.tick(64);
+    assert(machine.input(0xd3) == 0x33); // CRC-16 of A1 A1 A1 FE C H R N
+    machine.tick(64);
+    assert(machine.input(0xd3) == 0x1b);
+
+    // Read Track returns a canonical MFM stream with gaps, sync bytes, ID/data
+    // address marks, sector contents and valid CRC fields for the whole side.
+    machine.output(0xd0, 0xe2); // Read Track, side 1
+    constexpr std::size_t mfm_sector_bytes = 358;
+    constexpr std::size_t mfm_track_bytes = 26 * mfm_sector_bytes + 80;
+    std::vector<std::uint8_t> track_data;
+    track_data.reserve(mfm_track_bytes);
+    for (std::size_t i = 0; i < mfm_track_bytes; ++i) {
+        if (i != 0) machine.tick(64);
+        track_data.push_back(machine.input(0xd3));
+    }
+    assert(machine.media_change_allowed());
+    assert(track_data.size() == mfm_track_bytes);
+    assert(std::all_of(track_data.begin(), track_data.begin() + 40,
+                       [](std::uint8_t byte) { return byte == 0x4e; }));
+    assert(track_data[55] == 0xfe);
+    assert(track_data[56] == 76); // C
+    assert(track_data[57] == 1);  // H
+    assert(track_data[58] == 1);  // R
+    assert(track_data[59] == 1);  // N: 256 bytes
+    assert(track_data[60] == 0xec);
+    assert(track_data[61] == 0x92);
+    assert(track_data[99] == 0xfb);
+    assert(track_data[356] == 0xe1);
+    assert(track_data[357] == 0x22);
 
     fs::remove_all(temp);
 }

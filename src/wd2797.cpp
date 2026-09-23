@@ -15,6 +15,24 @@ std::uint8_t sector_size_code(std::size_t size) {
     return code;
 }
 
+std::uint16_t crc16(std::span<const std::uint8_t> bytes) {
+    std::uint16_t crc = 0xffff;
+    for (const auto byte : bytes) {
+        crc ^= static_cast<std::uint16_t>(byte) << 8U;
+        for (unsigned bit = 0; bit < 8; ++bit) {
+            crc = static_cast<std::uint16_t>((crc & 0x8000U) != 0
+                ? (crc << 1U) ^ 0x1021U : crc << 1U);
+        }
+    }
+    return crc;
+}
+
+void append_crc(std::vector<std::uint8_t>& output, std::size_t begin) {
+    const auto crc = crc16(std::span<const std::uint8_t>{output}.subspan(begin));
+    output.push_back(static_cast<std::uint8_t>(crc >> 8U));
+    output.push_back(static_cast<std::uint8_t>(crc));
+}
+
 } // namespace
 
 void Wd2797::reset() {
@@ -114,6 +132,47 @@ bool Wd2797::begin_sector(std::array<FloppyImage, 4>& drives, std::uint8_t drive
     return true;
 }
 
+bool Wd2797::begin_read_track(std::array<FloppyImage, 4>& drives, std::uint8_t drive) {
+    const auto& image = drives[drive];
+    const auto& geometry = image.geometry();
+    if (track_ >= geometry.cylinders || side_ >= geometry.sides) {
+        status_ = record_not_found;
+        intrq_ = true;
+        return false;
+    }
+
+    buffer_.clear();
+    const bool mfm = geometry.encoding == FloppyEncoding::mfm;
+    for (std::size_t number = 1; number <= geometry.sectors_per_track; ++number) {
+        const auto bytes = image.sector(track_, side_, number);
+        buffer_.insert(buffer_.end(), mfm ? 40U : 20U, mfm ? 0x4eU : 0xffU);
+        buffer_.insert(buffer_.end(), mfm ? 12U : 6U, 0x00U);
+
+        auto mark = buffer_.size();
+        if (mfm) buffer_.insert(buffer_.end(), 3, 0xa1U);
+        buffer_.push_back(0xfeU);
+        buffer_.push_back(track_);
+        buffer_.push_back(side_);
+        buffer_.push_back(static_cast<std::uint8_t>(number));
+        buffer_.push_back(sector_size_code(geometry.sector_size));
+        append_crc(buffer_, mark);
+
+        buffer_.insert(buffer_.end(), mfm ? 22U : 11U, mfm ? 0x4eU : 0xffU);
+        buffer_.insert(buffer_.end(), mfm ? 12U : 6U, 0x00U);
+        mark = buffer_.size();
+        if (mfm) buffer_.insert(buffer_.end(), 3, 0xa1U);
+        buffer_.push_back(0xfbU);
+        buffer_.insert(buffer_.end(), bytes.begin(), bytes.end());
+        append_crc(buffer_, mark);
+    }
+    buffer_.insert(buffer_.end(), mfm ? 80U : 40U, mfm ? 0x4eU : 0xffU);
+    position_ = 0;
+    status_ = busy;
+    drq_ = true;
+    intrq_ = false;
+    return true;
+}
+
 void Wd2797::finish_sector(std::array<FloppyImage, 4>& drives, std::uint8_t drive) {
     if (transfer_ == Transfer::write &&
         !drives[drive].write_sector(track_, side_, sector_, buffer_)) {
@@ -185,10 +244,22 @@ void Wd2797::command(std::uint8_t value, std::array<FloppyImage, 4>& drives,
     } else if (type == 0xC0U) {
         transfer_ = Transfer::read_address;
         buffer_ = {track_, side_, sector_,
-                   sector_size_code(drives[drive].geometry().sector_size), 0, 0};
+                   sector_size_code(drives[drive].geometry().sector_size)};
+        std::vector<std::uint8_t> id_field;
+        if (drives[drive].geometry().encoding == FloppyEncoding::mfm) {
+            id_field.insert(id_field.end(), 3, 0xa1U);
+        }
+        id_field.push_back(0xfeU);
+        id_field.insert(id_field.end(), buffer_.begin(), buffer_.end());
+        const auto crc = crc16(id_field);
+        buffer_.push_back(static_cast<std::uint8_t>(crc >> 8U));
+        buffer_.push_back(static_cast<std::uint8_t>(crc));
         position_ = 0;
         status_ = busy;
         drq_ = true;
+    } else if (type == 0xE0U) {
+        transfer_ = Transfer::read_track;
+        begin_read_track(drives, drive);
     } else {
         status_ = record_not_found;
         intrq_ = true;
