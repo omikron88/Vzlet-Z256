@@ -1,2 +1,5 @@
 /build/
 imgui.ini
+__pycache__/
+*.py[cod]
+*.egg-info/
