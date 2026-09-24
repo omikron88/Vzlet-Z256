@@ -23,6 +23,8 @@ nesouvislé bloky nevytvářejí zbytečná data.
 * návěští lze psát s dvojtečkou, `konstanta EQU výraz` také bez ní;
 * čísla: `$CAFE`, `0xCAFE`, `%1010`, desetinná čísla a znakové konstanty;
 * výrazy podporují `+ - * // % << >> & | ^ ~` a `*` jako aktuální adresu;
+* funkce `Hi(výraz)` vrátí bity 15–8 a `Lo(výraz)` bity 7–0; názvy funkcí
+  nerozlišují velikost písmen;
 * `<výraz` vynutí direct, `>výraz` extended adresování;
 * podporováno je immediate, direct, extended, relativní a úplné běžné
   indexované adresování 6809 včetně nepřímého a PCR; rovněž W formy 6309;
@@ -42,6 +44,8 @@ loop:   lda ,x+
 hotovo: rts
 text:   db "Ahoj!", 0
 vektor: dw start
+        lda #Hi(vektor)  ; horní bajt adresy
+        ldb #Lo(vektor)  ; spodní bajt adresy
 ```
 
 Při automatické volbě se adresa `$00..$FF` zakóduje jako direct, ostatní jako

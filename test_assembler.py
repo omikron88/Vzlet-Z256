@@ -45,6 +45,19 @@ class AssemblerTests(unittest.TestCase):
         result = Assembler().assemble("org $10\ndb 'A', 2*3, *-$10")
         self.assertEqual(result.memory[0x10:0x13], b"A\x06\x02")
 
+    def test_hi_lo_functions_are_case_insensitive_and_accept_expressions(self):
+        result = Assembler().assemble("""
+            address equ $ABCD
+            db Hi(address), lo(address), HI(address + $100), Lo($123456)
+            lda #hi(address)
+            ldb #LO(address)
+        """)
+        self.assertEqual(result.memory[:8], bytes.fromhex("ABCDA C5686AB C6CD".replace(" ", "")))
+
+    def test_hi_lo_require_one_argument(self):
+        with self.assertRaisesRegex(AssemblyError, r"HI\(\) expects exactly one argument"):
+            Assembler().assemble("db hi(1, 2)")
+
     def test_cli_binary_and_hex(self):
         with tempfile.TemporaryDirectory() as directory:
             src, out = Path(directory) / "a.asm", Path(directory) / "a.hex"

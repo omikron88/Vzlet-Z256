@@ -150,6 +150,11 @@ def _expression(text: str, symbols: dict[str, int], pc: int, unknown_ok: bool = 
         if name in {"x", "X"} and match.start() and text[match.start()-1] == "0":
             return name
         key = name.upper()
+        # Keep the built-in byte selectors as AST call names instead of
+        # looking them up in the user symbol table.  Returning the normalized
+        # spelling also makes the functions case-insensitive.
+        if key in {"HI", "LO"}:
+            return key
         safe = f"__S{len(names)}"
         if key not in symbols:
             if unknown_ok: raise _Unknown(key)
@@ -173,6 +178,12 @@ def _expression(text: str, symbols: dict[str, int], pc: int, unknown_ok: bool = 
                 return ord(node.value)
             return node.value
         if isinstance(node, ast.Name) and node.id in names: return names[node.id]
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id in {"HI", "LO"}):
+            if len(node.args) != 1 or node.keywords:
+                raise AssemblyError(f"{node.func.id}() expects exactly one argument")
+            value = visit(node.args[0])
+            return (value >> 8) & 0xFF if node.func.id == "HI" else value & 0xFF
         if isinstance(node, ast.BinOp) and type(node.op) in binary: return binary[type(node.op)](visit(node.left), visit(node.right))
         if isinstance(node, ast.UnaryOp) and type(node.op) in unary: return unary[type(node.op)](visit(node.operand))
         raise AssemblyError(f"unsupported expression {text!r}")
