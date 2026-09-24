@@ -325,5 +325,44 @@ int main() {
     assert(track_data[356] == 0xe1);
     assert(track_data[357] == 0x22);
 
+    // Write Track consumes the WD2797 formatter tokens and commits each data
+    // field after its generated-CRC token. Format all 26 sectors on side 1.
+    machine.output(0xd0, 0xf2);
+    bool first_format_byte = true;
+    const auto format_byte = [&](std::uint8_t byte) {
+        if (!first_format_byte) machine.tick(64);
+        first_format_byte = false;
+        machine.output(0xd3, byte);
+    };
+    for (std::uint8_t number = 1; number <= 26; ++number) {
+        for (int i = 0; i < 3; ++i) format_byte(0xf5); // MFM A1 sync token
+        format_byte(0xfe);
+        format_byte(76);
+        format_byte(1);
+        format_byte(number);
+        format_byte(1); // N=1, 256 bytes
+        format_byte(0xf7); // generate ID CRC
+        for (int i = 0; i < 3; ++i) format_byte(0xf5);
+        format_byte(0xfb);
+        for (std::size_t i = 0; i < 256; ++i) format_byte(number);
+        format_byte(0xf7); // generate data CRC and commit the sector
+    }
+    assert(machine.media_change_allowed());
+    assert(machine.drive(0).dirty());
+    for (std::size_t number = 1; number <= 26; ++number) {
+        const auto bytes = machine.drive(0).sector(76, 1, number);
+        assert(bytes.size() == 256);
+        assert(std::all_of(bytes.begin(), bytes.end(), [number](std::uint8_t byte) {
+            return byte == number;
+        }));
+    }
+
+    assert(machine.drive(0).set_write_protected(true));
+    machine.output(0xd0, 0xf2);
+    const auto protected_status = machine.input(0xd0);
+    assert((protected_status & vz256::Wd2797::write_protect) != 0);
+    assert((protected_status & vz256::Wd2797::busy) == 0);
+    assert(machine.media_change_allowed());
+
     fs::remove_all(temp);
 }

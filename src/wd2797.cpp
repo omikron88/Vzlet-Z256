@@ -47,6 +47,11 @@ void Wd2797::reset() {
     buffer_.clear();
     position_ = 0;
     drq_delay_ = 0;
+    format_state_ = FormatState::search_id;
+    format_id_position_ = 0;
+    format_data_.clear();
+    formatted_sector_seen_.clear();
+    formatted_sectors_ = 0;
 }
 
 void Wd2797::tick(std::uint32_t cycles) {
@@ -80,7 +85,8 @@ std::uint8_t Wd2797::read(std::uint8_t reg, std::array<FloppyImage, 4>& drives,
     case 1: return track_;
     case 2: return sector_;
     default:
-        if (!drq_ || transfer_ == Transfer::write || position_ >= buffer_.size()) return data_;
+        if (!drq_ || transfer_ == Transfer::write || transfer_ == Transfer::write_track ||
+            position_ >= buffer_.size()) return data_;
         data_ = buffer_[position_++];
         drq_ = false;
         if (position_ == buffer_.size()) finish_sector(drives, drive);
@@ -96,6 +102,10 @@ void Wd2797::write(std::uint8_t reg, std::uint8_t value,
     case 1: track_ = value; break;
     case 2: sector_ = value; break;
     default:
+        if (transfer_ == Transfer::write_track) {
+            if (drq_) write_track_byte(value, drives, drive);
+            break;
+        }
         data_ = value;
         if (!drq_ || transfer_ != Transfer::write || position_ >= buffer_.size()) break;
         buffer_[position_++] = value;
@@ -137,6 +147,7 @@ bool Wd2797::begin_read_track(std::array<FloppyImage, 4>& drives, std::uint8_t d
     const auto& geometry = image.geometry();
     if (track_ >= geometry.cylinders || side_ >= geometry.sides) {
         status_ = record_not_found;
+        transfer_ = Transfer::none;
         intrq_ = true;
         return false;
     }
@@ -171,6 +182,99 @@ bool Wd2797::begin_read_track(std::array<FloppyImage, 4>& drives, std::uint8_t d
     drq_ = true;
     intrq_ = false;
     return true;
+}
+
+bool Wd2797::begin_write_track(std::array<FloppyImage, 4>& drives, std::uint8_t drive) {
+    auto& image = drives[drive];
+    const auto& geometry = image.geometry();
+    if (image.write_protected()) {
+        status_ = write_protect;
+        transfer_ = Transfer::none;
+        intrq_ = true;
+        return false;
+    }
+    if (track_ >= geometry.cylinders || side_ >= geometry.sides) {
+        status_ = record_not_found;
+        transfer_ = Transfer::none;
+        intrq_ = true;
+        return false;
+    }
+    format_state_ = FormatState::search_id;
+    format_id_position_ = 0;
+    format_data_.clear();
+    formatted_sector_seen_.assign(geometry.sectors_per_track, false);
+    formatted_sectors_ = 0;
+    status_ = busy;
+    drq_ = true;
+    intrq_ = false;
+    return true;
+}
+
+void Wd2797::write_track_byte(std::uint8_t value,
+                              std::array<FloppyImage, 4>& drives,
+                              std::uint8_t drive) {
+    auto& image = drives[drive];
+    const auto& geometry = image.geometry();
+    drq_ = false;
+
+    switch (format_state_) {
+    case FormatState::search_id:
+        if (value == 0xfeU) {
+            format_state_ = FormatState::id;
+            format_id_position_ = 0;
+        }
+        break;
+    case FormatState::id:
+        format_id_[format_id_position_++] = value;
+        if (format_id_position_ == format_id_.size()) format_state_ = FormatState::search_data;
+        break;
+    case FormatState::search_data:
+        if (value == 0xfeU) {
+            format_state_ = FormatState::id;
+            format_id_position_ = 0;
+        } else if (value == 0xfbU || value == 0xf8U) {
+            const auto size_code = format_id_[3];
+            const auto size = size_code <= 3U ? (128U << size_code) : 0U;
+            if (format_id_[0] != track_ || format_id_[1] != side_ ||
+                format_id_[2] == 0 || format_id_[2] > geometry.sectors_per_track ||
+                size != geometry.sector_size) {
+                status_ = record_not_found;
+                transfer_ = Transfer::none;
+                intrq_ = true;
+                return;
+            }
+            format_data_.clear();
+            format_data_.reserve(size);
+            format_state_ = FormatState::data;
+        }
+        break;
+    case FormatState::data:
+        format_data_.push_back(value);
+        if (format_data_.size() == geometry.sector_size) format_state_ = FormatState::data_crc;
+        break;
+    case FormatState::data_crc:
+        // F7 tells the WD2797 to write the generated CRC. Accepting only this
+        // token also prevents a truncated field from changing the image.
+        const auto sector_index = static_cast<std::size_t>(format_id_[2] - 1U);
+        if (value != 0xf7U || formatted_sector_seen_[sector_index] ||
+            !image.write_sector(track_, side_, format_id_[2], format_data_)) {
+            status_ = image.write_protected() ? write_protect : record_not_found;
+            transfer_ = Transfer::none;
+            intrq_ = true;
+            return;
+        }
+        formatted_sector_seen_[sector_index] = true;
+        ++formatted_sectors_;
+        format_state_ = FormatState::search_id;
+        if (formatted_sectors_ == geometry.sectors_per_track) {
+            status_ = 0;
+            transfer_ = Transfer::none;
+            intrq_ = true;
+            return;
+        }
+        break;
+    }
+    drq_delay_ = byte_delay(image);
 }
 
 void Wd2797::finish_sector(std::array<FloppyImage, 4>& drives, std::uint8_t drive) {
@@ -260,6 +364,9 @@ void Wd2797::command(std::uint8_t value, std::array<FloppyImage, 4>& drives,
     } else if (type == 0xE0U) {
         transfer_ = Transfer::read_track;
         begin_read_track(drives, drive);
+    } else if (type == 0xF0U) {
+        transfer_ = Transfer::write_track;
+        begin_write_track(drives, drive);
     } else {
         status_ = record_not_found;
         intrq_ = true;

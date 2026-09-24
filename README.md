@@ -18,8 +18,9 @@ SDL 3 pro okno, vstup a výstup obrazu a procesorové jádro
 - paralelní aktivně nízká ASCII klávesnice přes PIO A, ASTB přerušení, fronta znaků
   a SDL mapování Ctrl, kurzorových a speciálních kláves,
 - WD2797 s příkazy Restore/Seek/Step, Read/Write Sector, multi-sector přenosem,
-  Read Address, Read Track, Force Interrupt a signály DRQ/INTRQ přes Z80 PIO B;
-  Read Address a syntetizovaná stopa obsahují správné CRC-16 pro FM i MFM,
+  Read Address, Read/Write Track, Force Interrupt a signály DRQ/INTRQ přes Z80 PIO B;
+  čtená stopa obsahuje správné CRC-16 pro FM i MFM a Write Track rozpoznává
+  formátovací značky WD2797, ID pole a datová pole pro bezpečné formátování média,
 - časový limit diskových operací přes kanál 3 CPU CTC, takže přístup k prázdné
   mechanice skončí chybou BIOSu namísto trvalého čekání,
 - čtyřkanálový CPU Z80 CTC v režimu timer/counter, prescalery 16/256, čtení
@@ -152,7 +153,7 @@ návrat na další prompt.
 
 ## Návrh dalších etap
 
-1. WD2797: doplnit Write Track, kontrolu CRC a reálné rotační časování.
+1. WD2797: doplnit kontrolu CRC, lost-data stav a reálné rotační časování.
 2. Z80 PIO/FDC CTC/SIO: režimy, vektory IM2 a dva prioritní řetězce podle specifikace.
 3. MC6845: odvozovat přesné horizontální a vertikální časování snímku z registrů.
 4. TCP sériové linky, tisk do souboru, magnetofonní WAV a debugger CPU/paměti.
