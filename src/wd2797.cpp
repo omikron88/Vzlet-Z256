@@ -47,6 +47,7 @@ void Wd2797::reset() {
     buffer_.clear();
     position_ = 0;
     drq_delay_ = 0;
+    drq_timeout_ = 0;
     format_state_ = FormatState::search_id;
     format_id_position_ = 0;
     format_data_.clear();
@@ -55,12 +56,36 @@ void Wd2797::reset() {
 }
 
 void Wd2797::tick(std::uint32_t cycles) {
+    if (transfer_ == Transfer::none) return;
+    if (drq_) {
+        if (drq_timeout_ != 0 && cycles >= drq_timeout_) {
+            status_ = static_cast<std::uint8_t>((status_ & ~busy) | lost_data);
+            transfer_ = Transfer::none;
+            drq_ = false;
+            drq_delay_ = drq_timeout_ = 0;
+            intrq_ = true;
+        } else if (drq_timeout_ != 0) {
+            drq_timeout_ -= cycles;
+        }
+        return;
+    }
     if (drq_delay_ == 0) return;
-    if (cycles >= drq_delay_) {
-        drq_delay_ = 0;
-        drq_ = true;
-    } else {
+    if (cycles < drq_delay_) {
         drq_delay_ -= cycles;
+        return;
+    }
+
+    const auto remaining = cycles - drq_delay_;
+    drq_delay_ = 0;
+    drq_ = true;
+    if (drq_timeout_ != 0 && remaining >= drq_timeout_) {
+        status_ = static_cast<std::uint8_t>((status_ & ~busy) | lost_data);
+        transfer_ = Transfer::none;
+        drq_ = false;
+        drq_timeout_ = 0;
+        intrq_ = true;
+    } else if (drq_timeout_ != 0) {
+        drq_timeout_ -= remaining;
     }
 }
 
@@ -89,8 +114,9 @@ std::uint8_t Wd2797::read(std::uint8_t reg, std::array<FloppyImage, 4>& drives,
             position_ >= buffer_.size()) return data_;
         data_ = buffer_[position_++];
         drq_ = false;
+        drq_timeout_ = 0;
         if (position_ == buffer_.size()) finish_sector(drives, drive);
-        else drq_delay_ = byte_delay(drives[drive]);
+        else drq_delay_ = drq_timeout_ = byte_delay(drives[drive]);
         return data_;
     }
 }
@@ -110,8 +136,9 @@ void Wd2797::write(std::uint8_t reg, std::uint8_t value,
         if (!drq_ || transfer_ != Transfer::write || position_ >= buffer_.size()) break;
         buffer_[position_++] = value;
         drq_ = false;
+        drq_timeout_ = 0;
         if (position_ == buffer_.size()) finish_sector(drives, drive);
-        else drq_delay_ = byte_delay(drives[drive]);
+        else drq_delay_ = drq_timeout_ = byte_delay(drives[drive]);
         break;
     }
 }
@@ -138,6 +165,7 @@ bool Wd2797::begin_sector(std::array<FloppyImage, 4>& drives, std::uint8_t drive
     status_ = busy;
     drq_ = true;
     drq_delay_ = 0;
+    drq_timeout_ = byte_delay(drives[drive]);
     intrq_ = false;
     return true;
 }
@@ -180,6 +208,7 @@ bool Wd2797::begin_read_track(std::array<FloppyImage, 4>& drives, std::uint8_t d
     position_ = 0;
     status_ = busy;
     drq_ = true;
+    drq_timeout_ = byte_delay(image);
     intrq_ = false;
     return true;
 }
@@ -206,6 +235,7 @@ bool Wd2797::begin_write_track(std::array<FloppyImage, 4>& drives, std::uint8_t 
     formatted_sectors_ = 0;
     status_ = busy;
     drq_ = true;
+    drq_timeout_ = byte_delay(image);
     intrq_ = false;
     return true;
 }
@@ -216,6 +246,7 @@ void Wd2797::write_track_byte(std::uint8_t value,
     auto& image = drives[drive];
     const auto& geometry = image.geometry();
     drq_ = false;
+    drq_timeout_ = 0;
 
     switch (format_state_) {
     case FormatState::search_id:
@@ -274,7 +305,7 @@ void Wd2797::write_track_byte(std::uint8_t value,
         }
         break;
     }
-    drq_delay_ = byte_delay(image);
+    drq_delay_ = drq_timeout_ = byte_delay(image);
 }
 
 void Wd2797::finish_sector(std::array<FloppyImage, 4>& drives, std::uint8_t drive) {
@@ -293,6 +324,7 @@ void Wd2797::finish_sector(std::array<FloppyImage, 4>& drives, std::uint8_t driv
             status_ = busy;
             drq_ = false;
             drq_delay_ = 0;
+            drq_timeout_ = 0;
             return;
         }
         ++sector_;
@@ -301,6 +333,7 @@ void Wd2797::finish_sector(std::array<FloppyImage, 4>& drives, std::uint8_t driv
             // Leave a rotational gap long enough for the BIOS transfer loop
             // to distinguish the end of one physical sector from the next.
             drq_delay_ = 1'024;
+            drq_timeout_ = byte_delay(drives[drive]);
             return;
         }
     }
@@ -308,6 +341,7 @@ void Wd2797::finish_sector(std::array<FloppyImage, 4>& drives, std::uint8_t driv
     transfer_ = Transfer::none;
     drq_ = false;
     drq_delay_ = 0;
+    drq_timeout_ = 0;
     intrq_ = true;
 }
 
@@ -316,6 +350,7 @@ void Wd2797::command(std::uint8_t value, std::array<FloppyImage, 4>& drives,
     command_ = value;
     drq_ = intrq_ = false;
     drq_delay_ = 0;
+    drq_timeout_ = 0;
     transfer_ = Transfer::none;
     status_ = 0;
 
@@ -361,6 +396,7 @@ void Wd2797::command(std::uint8_t value, std::array<FloppyImage, 4>& drives,
         position_ = 0;
         status_ = busy;
         drq_ = true;
+        drq_timeout_ = byte_delay(drives[drive]);
     } else if (type == 0xE0U) {
         transfer_ = Transfer::read_track;
         begin_read_track(drives, drive);

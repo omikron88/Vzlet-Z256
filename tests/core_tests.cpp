@@ -364,5 +364,16 @@ int main() {
     assert((protected_status & vz256::Wd2797::busy) == 0);
     assert(machine.media_change_allowed());
 
+    // If the CPU leaves DRQ unserviced for a complete byte interval, the
+    // controller terminates the command and reports Type II/III LOST DATA.
+    machine.output(0xd2, 1);
+    machine.output(0xd0, 0x82); // Read Sector, side 1
+    assert(!machine.media_change_allowed());
+    machine.tick(64);
+    const auto lost_status = machine.input(0xd0);
+    assert((lost_status & vz256::Wd2797::lost_data) != 0);
+    assert((lost_status & vz256::Wd2797::busy) == 0);
+    assert(machine.media_change_allowed());
+
     fs::remove_all(temp);
 }

@@ -15,6 +15,7 @@ public:
         busy = 0x01,
         data_request = 0x02,
         track_zero = 0x04,
+        lost_data = 0x04,
         record_not_found = 0x10,
         write_protect = 0x40,
         not_ready = 0x80,
@@ -62,6 +63,7 @@ private:
     std::vector<std::uint8_t> buffer_;
     std::size_t position_{};
     std::uint32_t drq_delay_{};
+    std::uint32_t drq_timeout_{};
     FormatState format_state_{FormatState::search_id};
     std::array<std::uint8_t, 4> format_id_{};
     std::size_t format_id_position_{};
