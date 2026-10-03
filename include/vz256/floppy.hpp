@@ -20,6 +20,7 @@ struct FloppyGeometry {
     std::size_t sector_size;
     FloppyEncoding encoding;
     bool double_step{};
+    std::uint16_t rpm{300};
 
     [[nodiscard]] constexpr std::size_t image_size() const {
         return cylinders * sides * sectors_per_track * sector_size;
@@ -27,7 +28,7 @@ struct FloppyGeometry {
     [[nodiscard]] constexpr bool valid() const {
         return cylinders != 0 && sides != 0 && sides <= 2 && sectors_per_track != 0 &&
                sector_size >= 128 && sector_size <= 1024 &&
-               (sector_size & (sector_size - 1)) == 0;
+               (sector_size & (sector_size - 1)) == 0 && rpm >= 60 && rpm <= 600;
     }
 };
 
@@ -37,11 +38,11 @@ inline const FloppyGeometry five_25_dsdd_80{"5.25-dsdd-80", 80, 2, 9, 512,
 inline const FloppyGeometry five_25_dsdd_40{"5.25-dsdd-40", 40, 2, 9, 512,
                                             FloppyEncoding::mfm, true};
 inline const FloppyGeometry eight_sssd_77{"8-sssd-77", 77, 1, 26, 128,
-                                          FloppyEncoding::fm};
+                                          FloppyEncoding::fm, false, 360};
 inline const FloppyGeometry eight_dssd_77{"8-dssd-77", 77, 2, 26, 128,
-                                          FloppyEncoding::fm};
+                                          FloppyEncoding::fm, false, 360};
 inline const FloppyGeometry eight_dsdd_77{"8-dsdd-77", 77, 2, 26, 256,
-                                          FloppyEncoding::mfm};
+                                          FloppyEncoding::mfm, false, 360};
 
 [[nodiscard]] const FloppyGeometry* find(std::string_view name);
 [[nodiscard]] const FloppyGeometry* detect(std::size_t image_size);

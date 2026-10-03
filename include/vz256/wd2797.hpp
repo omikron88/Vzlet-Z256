@@ -45,6 +45,7 @@ private:
     void write_track_byte(std::uint8_t value, std::array<FloppyImage, 4>& drives,
                           std::uint8_t drive);
     void finish_sector(std::array<FloppyImage, 4>& drives, std::uint8_t drive);
+    void set_rotation_speed(const FloppyImage& drive);
     [[nodiscard]] std::uint8_t status(std::array<FloppyImage, 4>& drives,
                                       std::uint8_t drive);
 
@@ -64,6 +65,8 @@ private:
     std::size_t position_{};
     std::uint32_t drq_delay_{};
     std::uint32_t drq_timeout_{};
+    std::uint32_t rotation_period_cycles_{800'000};
+    std::uint32_t rotation_phase_cycles_{};
     FormatState format_state_{FormatState::search_id};
     std::array<std::uint8_t, 4> format_id_{};
     std::size_t format_id_position_{};

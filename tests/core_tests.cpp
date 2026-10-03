@@ -143,6 +143,18 @@ int main() {
                     static_cast<std::streamsize>(disk.size()));
     }
     assert(machine.drive(0).load(temp / "disk.img"));
+    assert(machine.drive(0).geometry().rpm == 300);
+    machine.reset();
+    // At 300 RPM one revolution takes 800,000 cycles at 4 MHz. INDEX is a
+    // four-millisecond pulse and must advance with time, not status reads.
+    assert((machine.input(0xd0) & vz256::Wd2797::data_request) != 0);
+    assert((machine.input(0xd0) & vz256::Wd2797::data_request) != 0);
+    machine.tick(15'999);
+    assert((machine.input(0xd0) & vz256::Wd2797::data_request) != 0);
+    machine.tick(1);
+    assert((machine.input(0xd0) & vz256::Wd2797::data_request) == 0);
+    machine.tick(800'000 - 16'000);
+    assert((machine.input(0xd0) & vz256::Wd2797::data_request) != 0);
     machine.output(0xd7, 0x88); // PIO B interrupt vector
     machine.output(0xd7, 0xcf); // mode 3
     machine.output(0xd7, 0xc0); // direction mask, not a vector
@@ -170,6 +182,7 @@ int main() {
     // A 77-track 8-inch FM image uses 26 128-byte sectors instead of the
     // default 5.25-inch 9x512 layout.
     const auto eight_inch = vz256::floppy_geometries::eight_sssd_77;
+    assert(eight_inch.rpm == 360);
     {
         std::vector<std::uint8_t> disk(eight_inch.image_size());
         disk.back() = 0x6c;
@@ -184,6 +197,12 @@ int main() {
     assert(machine.drive(0).sector(76, 0, 26).back() == 0x6c);
     assert(machine.drive(0).sector(77, 0, 1).empty());
     assert(machine.drive(0).sector(0, 1, 1).empty());
+    machine.reset();
+    assert((machine.input(0xd0) & vz256::Wd2797::data_request) != 0);
+    machine.tick(16'000);
+    assert((machine.input(0xd0) & vz256::Wd2797::data_request) == 0);
+    machine.tick(666'666 - 16'000); // one revolution at 360 RPM
+    assert((machine.input(0xd0) & vz256::Wd2797::data_request) != 0);
 
     machine.output(0xd1, 76);
     machine.output(0xd2, 26);

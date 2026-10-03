@@ -5,6 +5,9 @@
 namespace vz256 {
 namespace {
 
+constexpr std::uint32_t cpu_hz = 4'000'000;
+constexpr std::uint32_t index_pulse_cycles = cpu_hz / 250; // approximately 4 ms
+
 std::uint32_t byte_delay(const FloppyImage& drive) {
     return drive.geometry().encoding == FloppyEncoding::mfm ? 64U : 128U;
 }
@@ -48,6 +51,8 @@ void Wd2797::reset() {
     position_ = 0;
     drq_delay_ = 0;
     drq_timeout_ = 0;
+    rotation_period_cycles_ = cpu_hz / 5; // 300 RPM
+    rotation_phase_cycles_ = 0;
     format_state_ = FormatState::search_id;
     format_id_position_ = 0;
     format_data_.clear();
@@ -56,6 +61,9 @@ void Wd2797::reset() {
 }
 
 void Wd2797::tick(std::uint32_t cycles) {
+    rotation_phase_cycles_ = static_cast<std::uint32_t>(
+        (static_cast<std::uint64_t>(rotation_phase_cycles_) + cycles) %
+        rotation_period_cycles_);
     if (transfer_ == Transfer::none) return;
     if (drq_) {
         if (drq_timeout_ != 0 && cycles >= drq_timeout_) {
@@ -89,16 +97,27 @@ void Wd2797::tick(std::uint32_t cycles) {
     }
 }
 
+void Wd2797::set_rotation_speed(const FloppyImage& drive) {
+    if (!drive.mounted()) return;
+    const auto period = static_cast<std::uint32_t>(
+        (static_cast<std::uint64_t>(cpu_hz) * 60U) / drive.geometry().rpm);
+    if (period != rotation_period_cycles_) {
+        rotation_period_cycles_ = period;
+        rotation_phase_cycles_ %= rotation_period_cycles_;
+    }
+}
+
 std::uint8_t Wd2797::status(std::array<FloppyImage, 4>& drives, std::uint8_t drive) {
+    set_rotation_speed(drives[drive]);
     auto result = status_;
     if (!drives[drive].mounted()) result |= not_ready;
     if (drq_) result |= data_request;
     if (type_one_status_ && track_ == 0) result |= track_zero;
-    // The boot monitor waits for an index edge before issuing RESTORE.
-    if (type_one_status_) {
-        index_ = !index_;
-        if (transfer_ == Transfer::none && index_) result |= data_request;
-    }
+    // Bit 1 is INDEX for Type I commands and DRQ for Type II/III commands.
+    // The pulse is derived from the selected medium's rotational speed rather
+    // than from how often software happens to read the status register.
+    index_ = drives[drive].mounted() && rotation_phase_cycles_ < index_pulse_cycles;
+    if (type_one_status_ && index_) result |= data_request;
     intrq_ = false; // reading status acknowledges INTRQ
     return result;
 }
@@ -347,6 +366,7 @@ void Wd2797::finish_sector(std::array<FloppyImage, 4>& drives, std::uint8_t driv
 
 void Wd2797::command(std::uint8_t value, std::array<FloppyImage, 4>& drives,
                      std::uint8_t drive) {
+    set_rotation_speed(drives[drive]);
     command_ = value;
     drq_ = intrq_ = false;
     drq_delay_ = 0;
