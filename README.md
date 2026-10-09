@@ -1,0 +1,215 @@
+# Emulátor Vzlet Z-256
+
+Přenosný základ emulátoru historického počítače Vzlet Z-256. Projekt používá C++20,
+SDL 3 pro okno, vstup a výstup obrazu a procesorové jádro
+[redcode/Z80](https://github.com/redcode/Z80). Zapojení vychází z
+[`hardware-spec.md`](hardware-spec.md) a dobových podkladů v adresáři [`doc`](doc).
+
+## Co je implementováno
+
+- 256 KiB operační RAM a nezávislé stránky pro čtení, zápis a M1 fetch (`0xFC`),
+- monitorová EPROM/SRAM v prvních 16 KiB včetně zrcadlení kratší EPROM,
+- sekundární stránkování `0xC0–0xCF`, 128 KiB planární VRAM a paměťové registry MC6845,
+- převod dvou bitových rovin na 640×300 ve čtyřech odstínech šedi, včetně
+  adresního prokládání MA/RA a počáteční adresy obrazu řízené MC6845,
+- hardwarový kurzor MC6845 řízený registry R10/R11/R14/R15, včetně vypnutí,
+  obtékajícího rozsahu rastrových řádků a režimů blikání po 16 nebo 32 snímcích,
+- délka snímku MC6845 odvozená z horizontálního součtu R0, vertikálního
+  součtu R4, korekce R5 a výšky znaku R9 při skutečném 12,5MHz pixel clocku,
+- obrazy disket s konfigurovatelnou geometrií a sektory 128, 256 nebo 512 bajtů,
+- paralelní aktivně nízká ASCII klávesnice přes PIO A, ASTB přerušení, fronta znaků
+  a SDL mapování Ctrl, kurzorových a speciálních kláves,
+- WD2797 s příkazy Restore/Seek/Step, Read/Write Sector, multi-sector přenosem,
+  Read Address, Read/Write Track, Force Interrupt a signály DRQ/INTRQ přes Z80 PIO B;
+  čtená stopa obsahuje správné CRC-16 pro FM i MFM a Write Track rozpoznává
+  formátovací značky WD2797, ID pole a datová pole pro bezpečné formátování média,
+- časování datových přenosů WD2797 včetně chyby LOST DATA, pokud procesor
+  neobslouží DRQ před příchodem následujícího bajtu,
+- rotační fáze mechaniky a časově řízený čtyřmilisekundový index pulz při
+  300 ot./min pro 5,25″ a 360 ot./min pro 8″ média, včetně podmíněného
+  přerušení Force Interrupt při každém index pulzu,
+- rotační latence Read/Write Sector a geometricky odvozené mezery mezi sektory
+  namísto okamžitého zpřístupnění dat po vydání příkazu,
+- head-load příznak typu II/III s prodlevou 30 ms pro 5,25″ a 15 ms pro 8″
+  mechaniky, po které řadič znovu vyhledá úhlovou pozici požadovaného sektoru,
+- podmíněná přerušení Force Interrupt při přechodech READY↔NOT READY po vložení
+  nebo vysunutí média ve vybrané mechanice,
+- časový limit diskových operací přes kanál 3 CPU CTC, takže přístup k prázdné
+  mechanice skončí chybou BIOSu namísto trvalého čekání,
+- čtyřkanálový CPU Z80 CTC v režimu timer/counter, prescalery 16/256, čtení
+  čítače, kaskáda kanálů 2→3 a vektorovaná přerušení IM2,
+- druhý čtyřkanálový CTC na FDC desce na portech `0xD8–0xDB`, taktovaný 1 MHz,
+  včetně samostatných IM2 vektorů; kanály 1/2 čekají na budoucí vstup z kazety,
+- Centronics tiskárna přes CPU PIO na portech `0xF0–0xF3`; parametr
+  `--printer FILE` ukládá výstup CP/M `LIST` do zvoleného souboru,
+- dvoukanálový CPU Z80 SIO na portech `0xF8–0xFB` s programováním registrů,
+  přijímacími frontami, vysílacím výstupem a prioritním IM2 přerušením,
+- druhý Z80 SIO na FDC desce na portech `0xDC–0xDF`, se samostatnými kanály,
+  datovými frontami a přerušením za FDC PIO a CTC v prioritním řetězci,
+- obecný model Z80 PIO s režimy 0–3, směrovou a přerušovací maskou režimu 3,
+  AND/OR úrovňovou podmínkou, STROBE přerušením a prioritou kanálu A,
+- grafické rozhraní Dear ImGui s hlavním menu, stavem mechanik, pozastavením,
+  fullscreen režimem a správou diskových obrazů přes nativní dialogy SDL3,
+- adaptér procesoru redcode/Z80, real-time smyčka na 4 MHz, reset klávesou **F12**
+  a automatické načtení dodaných ROM/disku.
+
+Klávesa **F10** nebo položka **File > Disk drives** otevře grafickou správu čtyř
+mechanik. Dialog umožňuje vybrat geometrii, otevřít existující obraz, uložit jej,
+vysunout médium a přepínat ochranu proti zápisu. Tlačítko **Create blank…** vytvoří
+podle právě zvolené geometrie nový obraz, vyplní jej
+bajtem `0xE5` používaným CP/M pro volné adresářové položky a rovnou jej připojí do
+vybrané mechaniky. U změněného obrazu je před vysunutím nutné změny uložit nebo
+výslovně zahodit. Zápis obrazu používá dočasný soubor a atomické přejmenování.
+
+Hlavní menu nabízí reset (**F12**), pozastavení emulace (**F5**) a fullscreen
+režim (**Alt+Enter**). Dear ImGui je staženo v připnuté verzi a přilinkováno
+staticky k frontendu; stažení lze řídit volbou `VZ256_FETCH_IMGUI`, případně
+použít lokální checkout přes `VZ256_IMGUI_SOURCE_DIR`.
+V nabídce **View** lze zachovat poměr obrazu 4:3, zapnout celočíselné škálování
+a volitelné scanlines. Stavový pruh je ukotvený u spodního okraje okna mimo
+plochu emulované obrazovky. Obrazovka respektuje prostor obsazený hlavním menu
+i stavovým pruhem, takže ovládací prvky nikdy nepřekrývají emulovaný obraz.
+
+PIO a SIO na FDC desce mají připravené dekódování sběrnice, ale jejich úplné
+stavové automaty a přerušovací daisy-chain jsou další etapou. Tento stav je záměrně
+oddělen od paměťového a obrazového jádra, které lze testovat bez SDL.
+
+## Sestavení
+
+Je třeba CMake 3.24+ a překladač s C++20. CMake stáhne připnuté revize SDL 3,
+`redcode/Z80` a jeho závislosti Zeta. Systémové SDL3 použije automaticky;
+v prostředí bez sítě lze předat již existující checkout Z80 a vypnout stažení SDL:
+
+```sh
+cmake -S . -B build -DVZ256_Z80_SOURCE_DIR=/cesta/k/Z80 -DVZ256_FETCH_SDL3=OFF
+cmake --build build
+./build/vz256 --resources .
+```
+
+Výstup na tiskárnu lze připojit k souboru, do kterého se jednotlivé tiskové úlohy
+přidávají i při dalších spuštěních emulátoru:
+
+```sh
+./build/vz256 --resources . --printer print.txt
+```
+
+Výstupní soubor lze vybrat nebo změnit také za běhu pomocí položky
+**File > Printer output…**. Položka **Disconnect printer** tiskárnu od souboru
+odpojí; aktuální stav a název souboru se zobrazují ve spodním stavovém pruhu.
+Při diskové operaci stavový pruh navíc ukazuje vybranou mechaniku, stopu, stranu,
+sektor, druh operace a aktivní signály `DRQ`/`INTRQ` řadiče WD2797.
+Čtyři LED označené A–D svítí zeleně při čtení nebo vyhledávání a červeně při
+zápisu či formátování. Krátké operace zůstávají indikovány ještě 150 ms, aby byla
+aktivita viditelná i na rychlém hostitelském počítači.
+
+### Ubuntu 24.04 a Raspberry Pi OS
+
+Pro Ubuntu 24.04 na x86-64 i ARM64 a aktuální Raspberry Pi OS na Raspberry Pi 4/5
+je připraven instalační skript a CMake preset. Skript používá pouze `apt` a nainstaluje
+překladač, Ninja a vývojové knihovny potřebné pro SDL3:
+
+```sh
+git clone https://github.com/omikron88/Vzlet-Z256.git
+cd Vzlet-Z256
+sudo ./scripts/install-linux-deps.sh
+cmake --preset linux-release
+cmake --build --preset linux-release
+ctest --preset linux-release
+./build/linux-release/vz256 --resources .
+```
+
+SDL3, Z80 a Zeta se stáhnou v připnutých verzích při konfiguraci, takže není nutný
+systémový balíček SDL3. Stejný postup funguje na 64bitovém Raspberry Pi OS. Na
+32bitovém systému lze projekt rovněž sestavit nativně; kvůli delšímu překladu SDL3
+je vhodné ponechat paralelismus presetu omezený na dvě úlohy.
+
+Pro server, CI nebo Raspberry Pi bez grafického prostředí lze sestavit pouze jádro:
+
+```sh
+cmake --preset linux-core
+cmake --build --preset linux-core
+ctest --preset linux-core
+```
+
+GitHub Actions ověřuje plné sestavení, všechny testy a headless spuštění SDL aplikace
+na Ubuntu 24.04 pro amd64 i arm64. ARM64 sestavení používá stejné ABI a závislosti
+jako 64bitový Raspberry Pi OS.
+
+### Statický balíček
+
+Preset `linux-static` vloží monitorovou i znakovou ROM přímo do programu a staticky
+přilinkuje SDL3, Z80, Zeta a při použití GCC také jeho C++ runtime. Dynamické
+zůstávají pouze systémové knihovny Linuxu
+(například `libc`, grafický ovladač a knihovny X11/Wayland načítané systémem):
+
+```sh
+cmake --preset linux-static
+cmake --build --preset linux-static
+ctest --preset linux-static
+./build/linux-static/vz256
+```
+
+Takto vytvořený program pro spuštění nepotřebuje adresář `roms`, parametr
+`--resources` ani samostatný bootovací obraz. Statická varianta obsahuje také výchozí
+bootovací disk, ze kterého CP/M nabootuje v režimu pouze pro čtení. Pokud je program
+spuštěn v kořeni projektu, může použít zapisovatelný `disks/boot.img`; jiný zapisovatelný
+obraz lze zadat parametrem `--drive-a` nebo připojit přes dialog mechanik.
+
+#### Windows x64
+
+Na Windows lze ze „Developer PowerShell for VS 2022“ vytvořit jediný přenositelný
+`vz256.exe` pomocí stejné statické varianty:
+
+```powershell
+cmake --preset windows-static
+cmake --build --preset windows-static
+ctest --preset windows-static
+.\build\windows-static\Release\vz256.exe
+```
+
+Program obsahuje monitorovou ROM, znakovou ROM, výchozí bootovací disk, SDL3, Z80,
+Zeta a statický MSVC runtime (`/MT`). Nepotřebuje tedy DLL těchto knihoven ani další
+datové soubory. Nadále používá standardní systémové DLL dodávané s Windows. Vlastní
+zapisovatelné obrazy disket zůstávají volitelnými externími soubory.
+
+Obrazy a geometrie všech mechanik lze zadat samostatně (písmena `a` až `d`):
+
+```sh
+./build/vz256 --resources . \
+  --drive-a disks/boot.img --geometry-a 5.25-dsdd-80 \
+  --drive-c disks/system8.img --geometry-c 8-dssd-77 --read-only-c
+```
+
+Známé profily jsou `5.25-dsdd-80`, `5.25-dsdd-40`, `8-sssd-77`, `8-dssd-77`
+a `8-dsdd-77`. Poslední profil používá 77 stop, dvě strany a 26 sektorů po
+256 bajtech. Bez parametru `--geometry-X` se profil jednoznačně rozpozná podle
+velikosti obrazu; neznámá nebo nejednoznačná velikost je bezpečně odmítnuta.
+
+Samotné paměťové a obrazové jádro lze testovat bez externích závislostí:
+
+```sh
+cmake -S . -B build -DVZ256_BUILD_APP=OFF
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+Při běžném sestavení se navíc spustí integrační test skutečného jádra Z80. Testovací
+program provede opcode/data fetch, zápis do RAM a výstup na stránkovací port, takže
+ověřuje nejen linkování knihovny, ale také celý adaptér sběrnice.
+
+Test `boot_disk` spustí dodanou monitorovou EPROM, provede inicializaci periferií a
+ověří, že BIOS přes přerušení PIO/WD2797 načte z `boot.img` jak diskový loader do
+`0xF000`, tak CCP/BDOS do `0xE400`, vypíše prompt CP/M a přejde do čekání na
+klávesnici v rutině BIOS CONIN. Následně přes PIO klávesnici zadá `DIR` a ověří
+návrat na další prompt.
+
+## Návrh dalších etap
+
+1. WD2797: doplnit kontrolu CRC a přesnější model vyhledávání ID polí.
+2. Zapojit obecný Z80 PIO do obou desek a dokončit oba prioritní řetězce; propojit vstupy
+   FDC CTC kanálů 1/2 s budoucím modelem kazetového komparátoru.
+3. MC6845: doplnit synchronizační pulzy, blanking a přerušení od vertikálního běhu.
+4. TCP sériové linky, magnetofonní WAV a debugger CPU/paměti.
+
+ROM se nikdy nemění. Všechny připojené zapisovatelné diskové obrazy se při ukončení
+uloží pouze tehdy, pokud byly změněny.
