@@ -1,0 +1,772 @@
+#include "vz256/machine.hpp"
+#include "vz256/pio.hpp"
+
+#include <algorithm>
+#include <array>
+#include <cassert>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <vector>
+
+int main() {
+    namespace fs = std::filesystem;
+    const auto temp = fs::temp_directory_path() / "vz256-core-test";
+    fs::create_directories(temp);
+
+    // Minimal unsigned 8-bit mono PCM WAV: negative, positive, negative. The
+    // cassette comparator reports transitions independently of sample rate.
+    const std::array<std::uint8_t, 47> wav{
+        'R','I','F','F',39,0,0,0,'W','A','V','E','f','m','t',' ',16,0,0,0,
+        1,0,1,0,4,0,0,0,4,0,0,0,1,0,8,0,'d','a','t','a',3,0,0,0,0,255,0};
+    { std::ofstream f(temp / "tape.wav", std::ios::binary);
+      f.write(reinterpret_cast<const char*>(wav.data()), static_cast<std::streamsize>(wav.size())); }
+    vz256::Cassette cassette;
+    assert(cassette.load_wav(temp / "tape.wav"));
+    cassette.set_motor(true);
+    assert(cassette.tick(2, 8).left == 0);
+    assert(cassette.tick(2, 8).left == 1);
+    assert(cassette.tick(2, 8).left == 1);
+    assert(cassette.finished());
+    assert(cassette.duration_seconds() == 0.75);
+    assert(cassette.position_seconds() == cassette.duration_seconds());
+    cassette.rewind();
+    assert(cassette.position_seconds() == 0.0);
+    cassette.set_motor(false);
+    assert(cassette.tick(100, 8).left == 0);
+    assert(!cassette.finished());
+    assert(cassette.eject());
+    assert(!cassette.loaded());
+    const auto new_tape = temp / "new-tape.wav";
+    fs::remove(new_tape);
+    vz256::Cassette recorder;
+    assert(recorder.create_wav(new_tape));
+    assert(recorder.loaded());
+    assert(recorder.recording());
+    assert(!recorder.motor());
+    assert(fs::file_size(new_tape) == 44);
+    vz256::Cassette empty_playback;
+    assert(empty_playback.load_wav(new_tape));
+    assert(empty_playback.loaded());
+    assert(empty_playback.finished());
+    assert(!empty_playback.recording());
+
+    // FDC SIO RTS B selects the tape input and inactive RTS A runs its motor.
+    vz256::Machine tape_machine;
+    assert(tape_machine.cassette().create_wav(temp / "controlled-tape.wav"));
+    tape_machine.output(0xdd, 5);
+    tape_machine.output(0xdd, 0x0a); // transmitter + asserted RTS A: motor stopped
+    assert(!tape_machine.cassette().motor());
+    tape_machine.output(0xdf, 5);
+    tape_machine.output(0xdf, 0x08); // inactive RTS B selects cassette
+    tape_machine.output(0xdd, 5);
+    tape_machine.output(0xdd, 0x08); // run motor
+    tape_machine.output(0xd8, 0x05); // 1 MHz / 16 / 2 = 31,250 terminal counts/s
+    tape_machine.output(0xd8, 2);
+    tape_machine.output(0xdd, 4);
+    tape_machine.output(0xdd, 0x44); // asynchronous, x16 clock => about 976 Bd
+    tape_machine.output(0xdc, 0xa5);
+    assert(tape_machine.cassette().save_wav());
+    assert(fs::file_size(temp / "controlled-tape.wav") > 44);
+    vz256::Cassette recorded;
+    assert(recorded.load_wav(temp / "controlled-tape.wav"));
+    assert(!recorded.finished());
+    assert(fs::file_size(temp / "controlled-tape.wav") > 1'800);
+    assert(recorded.detect_baud(0) >= 900 && recorded.detect_baud(0) <= 1'050);
+    recorded.set_decode_baud(0, 976);
+    recorded.set_motor(true);
+    (void)recorded.tick(2'000, 44'100);
+    assert((recorded.take_decoded(0) == std::vector<std::uint8_t>{0xa5}));
+    // A historical recording may be quiet and have a large DC offset. Make
+    // both logical levels positive; loading must remove the offset and restore
+    // enough amplitude for the phase decoder.
+    const auto noisy_tape = temp / "noisy-tape.wav";
+    std::vector<std::uint8_t> noisy;
+    { std::ifstream f(temp / "controlled-tape.wav", std::ios::binary);
+      noisy.assign(std::istreambuf_iterator<char>(f), {}); }
+    for (std::size_t at = 44; at + 1 < noisy.size(); at += 2) {
+        const auto raw = static_cast<std::uint16_t>(noisy[at] |
+                                                    static_cast<std::uint16_t>(noisy[at + 1]) << 8U);
+        const auto sample = static_cast<std::int16_t>(raw);
+        const auto changed = static_cast<std::int16_t>(sample / 4 + 8'000);
+        const auto encoded = static_cast<std::uint16_t>(changed);
+        noisy[at] = static_cast<std::uint8_t>(encoded);
+        noisy[at + 1] = static_cast<std::uint8_t>(encoded >> 8U);
+    }
+    // Add alternating near-zero comparator noise to the left track. After DC
+    // removal these samples straddle zero, but must not create false edges.
+    std::int64_t left_total = 0;
+    std::size_t left_frames = 0;
+    for (std::size_t at = 44; at + 1 < noisy.size(); at += 4) {
+        left_total += static_cast<std::int16_t>(static_cast<std::uint16_t>(noisy[at] |
+                      static_cast<std::uint16_t>(noisy[at + 1]) << 8U));
+        ++left_frames;
+    }
+    const auto left_mean = static_cast<std::int16_t>(left_total /
+                                                      static_cast<std::int64_t>(left_frames));
+    for (std::size_t frame = 5; 44 + frame * 4 + 1 < noisy.size(); frame += 5) {
+        const auto changed = static_cast<std::uint16_t>(static_cast<std::int16_t>(
+            left_mean + ((frame & 1U) != 0 ? 200 : -200)));
+        const auto at = 44 + frame * 4;
+        noisy[at] = static_cast<std::uint8_t>(changed);
+        noisy[at + 1] = static_cast<std::uint8_t>(changed >> 8U);
+    }
+    { std::ofstream f(noisy_tape, std::ios::binary);
+      f.write(reinterpret_cast<const char*>(noisy.data()), static_cast<std::streamsize>(noisy.size())); }
+    vz256::Cassette normalized;
+    assert(normalized.load_wav(noisy_tape));
+    normalized.set_decode_baud(0, 976);
+    normalized.set_motor(true);
+    const auto noisy_edges = normalized.tick(2'000, 44'100);
+    assert(noisy_edges.left <= 40);
+    assert((normalized.take_decoded(0) == std::vector<std::uint8_t>{0xa5}));
+
+    // Simulate roughly 25% wow by periodically repeating a complete stereo
+    // frame. Edge-locked half-bit windows must still recover the byte at the
+    // originally configured baud rate.
+    std::vector<std::uint8_t> original;
+    { std::ifstream f(temp / "controlled-tape.wav", std::ios::binary);
+      original.assign(std::istreambuf_iterator<char>(f), {}); }
+    std::vector<std::uint8_t> stretched(original.begin(), original.begin() + 44);
+    std::size_t frame_number = 0;
+    for (std::size_t at = 44; at + 3 < original.size(); at += 4, ++frame_number) {
+        stretched.insert(stretched.end(), original.begin() + static_cast<std::ptrdiff_t>(at),
+                         original.begin() + static_cast<std::ptrdiff_t>(at + 4));
+        if (frame_number % 4 == 0)
+            stretched.insert(stretched.end(), original.begin() + static_cast<std::ptrdiff_t>(at),
+                             original.begin() + static_cast<std::ptrdiff_t>(at + 4));
+    }
+    const auto set_u32 = [&](std::size_t at, std::uint32_t value) {
+        for (unsigned byte = 0; byte < 4; ++byte)
+            stretched[at + byte] = static_cast<std::uint8_t>(value >> (byte * 8U));
+    };
+    set_u32(4, static_cast<std::uint32_t>(stretched.size() - 8));
+    set_u32(40, static_cast<std::uint32_t>(stretched.size() - 44));
+    const auto stretched_tape = temp / "stretched-tape.wav";
+    { std::ofstream f(stretched_tape, std::ios::binary);
+      f.write(reinterpret_cast<const char*>(stretched.data()),
+              static_cast<std::streamsize>(stretched.size())); }
+    vz256::Cassette phase_locked;
+    assert(phase_locked.load_wav(stretched_tape));
+    const auto detected_stretched_baud = phase_locked.detect_baud(0);
+    assert(detected_stretched_baud >= 700 && detected_stretched_baud <= 900);
+    phase_locked.set_decode_baud(0, 0); // zero selects automatic detection
+    assert(phase_locked.decode_baud(0) == detected_stretched_baud);
+    phase_locked.set_motor(true);
+    (void)phase_locked.tick(3'000, 44'100);
+    assert((phase_locked.take_decoded(0) == std::vector<std::uint8_t>{0xa5}));
+
+    // An exchanged tape-head polarity must be recognized without a manual
+    // switch. Negate both PCM tracks and let the decoder select baud and
+    // polarity from valid asynchronous framing.
+    auto inverted = original;
+    for (std::size_t at = 44; at + 1 < inverted.size(); at += 2) {
+        const auto raw = static_cast<std::uint16_t>(inverted[at] |
+                                                    static_cast<std::uint16_t>(inverted[at + 1]) << 8U);
+        const auto sample = static_cast<std::int16_t>(raw);
+        const auto changed = static_cast<std::uint16_t>(static_cast<std::int16_t>(-sample));
+        inverted[at] = static_cast<std::uint8_t>(changed);
+        inverted[at + 1] = static_cast<std::uint8_t>(changed >> 8U);
+    }
+    const auto inverted_tape = temp / "inverted-tape.wav";
+    { std::ofstream f(inverted_tape, std::ios::binary);
+      f.write(reinterpret_cast<const char*>(inverted.data()),
+              static_cast<std::streamsize>(inverted.size())); }
+    vz256::Cassette auto_polarity;
+    assert(auto_polarity.load_wav(inverted_tape));
+    const auto inverted_baud = auto_polarity.detect_baud(0);
+    assert(auto_polarity.detect_inverted(0, inverted_baud));
+    auto_polarity.set_decode_auto(0);
+    assert(auto_polarity.decode_baud(0) == inverted_baud);
+    auto_polarity.set_motor(true);
+    (void)auto_polarity.tick(2'000, 44'100);
+    assert((auto_polarity.take_decoded(0) == std::vector<std::uint8_t>{0xa5}));
+    tape_machine.output(0xdd, 5);
+    tape_machine.output(0xdd, 0x08); // inactive RTS A: motor running
+    assert(tape_machine.cassette().motor());
+    tape_machine.output(0xdf, 5);
+    tape_machine.output(0xdf, 0x0a); // asserted RTS B selects serial, not tape
+    assert(!tape_machine.cassette().motor());
+
+    vz256::Ctc ctc;
+    ctc.reset();
+    ctc.write(0, 0x80); // IM2 vector base
+    ctc.write(0, 0x85); // timer, interrupt enabled, constant follows
+    ctc.write(0, 2);
+    ctc.tick(31);
+    assert(!ctc.interrupt_pending());
+    ctc.tick(1);
+    assert(ctc.interrupt_pending());
+    ctc.write(1, 0xc5); // counter, interrupt enabled, constant follows
+    ctc.write(1, 2);
+    ctc.trigger(1);
+    assert(ctc.read(1) == 1);
+    ctc.trigger(1);
+    assert(ctc.interrupt_acknowledge() == 0x80);
+    assert(!ctc.interrupt_pending()); // channel 0 blocks lower-priority channel 1
+    assert(ctc.interrupt_reti());
+    assert(ctc.interrupt_pending());
+    assert(ctc.interrupt_acknowledge() == 0x82);
+    assert(ctc.interrupt_reti());
+    vz256::Ctc baud_ctc;
+    baud_ctc.reset();
+    baud_ctc.write(0, 0x05); // timer, prescaler 16, constant follows
+    baud_ctc.write(0, 2);
+    assert(baud_ctc.output_rate(0, 1'000'000) == 31'250);
+    baud_ctc.write(0, 0x47); // counter mode bypasses the timer prescaler
+    baud_ctc.write(0, 52);
+    assert(baud_ctc.output_rate(0, 1'000'000) == 19'230);
+
+    vz256::Pio pio;
+    pio.reset();
+    pio.control(1, 0x88); // channel B interrupt vector
+    pio.control(1, 0xcf); // mode 3, direction mask follows
+    pio.control(1, 0xc0); // bits 6/7 input, remaining bits output
+    pio.write(1, 0x0c);
+    assert(pio.read(1) == 0xcc);
+    pio.control(1, 0xb7); // enabled, OR, active high, mask follows
+    pio.control(1, 0x7f); // monitor DRQ on bit 7
+    pio.set_input(1, 0x40);
+    assert(!pio.interrupt_pending());
+    pio.set_input(1, 0xc0);
+    assert(pio.interrupt_pending());
+    assert(pio.interrupt_acknowledge() == 0x88);
+    assert(pio.interrupt_reti());
+    pio.control(0, 0x8a);
+    pio.control(0, 0x4f); // input mode
+    pio.control(0, 0x83); // interrupt enabled
+    pio.set_input(0, static_cast<std::uint8_t>(~'A'));
+    pio.strobe(0);
+    assert(pio.interrupt_pending());
+    assert(pio.interrupt_acknowledge() == 0x8a);
+    assert(pio.interrupt_reti());
+    assert(pio.read(0) == static_cast<std::uint8_t>(~'A'));
+    { std::ofstream f(temp / "monitor.rom", std::ios::binary); f.put('\x42'); f.put('\x24'); }
+    { std::ofstream f(temp / "char.rom", std::ios::binary); f.put('\x5a'); }
+
+    vz256::Machine machine;
+    assert(machine.load_roms(temp / "monitor.rom", temp / "char.rom"));
+    vz256::Machine memory_rom_machine;
+    const std::array<std::uint8_t, 2> monitor_data{0x42, 0x24};
+    const std::array<std::uint8_t, 1> character_data{0x5a};
+    assert(memory_rom_machine.load_roms(monitor_data, character_data));
+    memory_rom_machine.reset();
+    assert(memory_rom_machine.read(0) == 0x42);
+    assert(memory_rom_machine.read(2) == 0x42);
+    std::array<std::uint8_t, 128> embedded_disk{};
+    embedded_disk[0] = 0xc3;
+    const vz256::FloppyGeometry embedded_geometry{"embedded-test", 1, 1, 1, 128,
+                                                   vz256::FloppyEncoding::fm};
+    assert(memory_rom_machine.drive(0).load(embedded_disk, embedded_geometry));
+    assert(memory_rom_machine.drive(0).write_protected());
+    assert(memory_rom_machine.drive(0).sector(0, 0, 1).front() == 0xc3);
+    vz256::FloppyImage blank_image;
+    assert(blank_image.create(temp / "blank.img", embedded_geometry));
+    assert(blank_image.mounted());
+    assert(blank_image.storage_writable());
+    assert(!blank_image.write_protected());
+    assert(!blank_image.dirty());
+    assert(blank_image.path() == temp / "blank.img");
+    assert(blank_image.sector(0, 0, 1).size() == 128);
+    assert(std::all_of(blank_image.sector(0, 0, 1).begin(),
+                       blank_image.sector(0, 0, 1).end(),
+                       [](std::uint8_t byte) { return byte == 0xe5; }));
+    assert(fs::file_size(temp / "blank.img") == embedded_geometry.image_size());
+    machine.reset();
+    assert(machine.read(0) == 0x42);
+    assert(machine.read(2) == 0x42); // short ROM is mirrored
+    machine.write(0, 0xff);
+    assert(machine.read(0) == 0x42); // EPROM stays read-only
+    machine.write(0x2000, 0xa5);
+    assert(machine.read(0x2000) == 0xa5);
+
+    // CPU PIO drives a Centronics printer: channel B carries data and the
+    // active-low STROBE on channel A captures one byte per falling edge.
+    assert((machine.input(0xf0) & 0x01U) == 0); // not busy
+    assert((machine.input(0xf0) & 0x04U) != 0); // /ERROR inactive
+    machine.output(0xf1, 'A');
+    machine.output(0xf0, 0x00);
+    machine.output(0xf0, 0x00); // holding STROBE low is not another byte
+    machine.output(0xf0, 0xff);
+    machine.output(0xf1, 'B');
+    machine.output(0xf0, 0x7f);
+    const auto printed = machine.take_printer_output();
+    assert((printed == std::vector<std::uint8_t>{'A', 'B'}));
+    assert(machine.take_printer_output().empty());
+
+    // CPU SIO channel B is mapped at F9/FB. Program its interrupt vector,
+    // asynchronous receiver and transmitter through the normal WR selector.
+    machine.output(0xfb, 2);
+    machine.output(0xfb, 0xb0);
+    machine.output(0xfb, 3);
+    machine.output(0xfb, 0xc1); // receiver enabled, eight bits
+    machine.output(0xfb, 5);
+    machine.output(0xfb, 0x68); // transmitter enabled, eight bits
+    machine.output(0xfb, 1);
+    machine.output(0xfb, 0x18); // interrupt on every received character
+    machine.serial_receive(1, 'S');
+    assert((machine.input(0xfb) & 0x05U) == 0x05U); // RX ready and TX empty
+    assert(machine.interrupt_pending());
+    assert(machine.interrupt_vector() == 0xb0);
+    assert(machine.input(0xf9) == 'S');
+    machine.interrupt_reti();
+    assert((machine.input(0xfb) & 0x01U) == 0);
+    machine.output(0xf9, 'O');
+    machine.output(0xf9, 'K');
+    assert((machine.take_serial_output(1) == std::vector<std::uint8_t>{'O', 'K'}));
+    assert(machine.take_serial_output(1).empty());
+
+    // The FDC-board SIO uses the interleaved DC=data A, DD=control A,
+    // DE=data B, DF=control B mapping. Its daisy chain follows PIO and CTC.
+    machine.output(0xdf, 2);
+    machine.output(0xdf, 0xb8); // common interrupt vector lives in channel B WR2
+    machine.output(0xdd, 3);
+    machine.output(0xdd, 0xc1);
+    machine.output(0xdd, 5);
+    machine.output(0xdd, 0x68);
+    machine.output(0xdd, 1);
+    machine.output(0xdd, 0x18);
+    machine.fdc_serial_receive(0, 'T');
+    assert((machine.input(0xdd) & 0x05U) == 0x05U);
+    assert(machine.interrupt_pending());
+    assert(machine.interrupt_vector() == 0xb8);
+    assert(machine.input(0xdc) == 'T');
+    machine.output(0xdc, 'F');
+    assert((machine.take_fdc_serial_output(0) == std::vector<std::uint8_t>{'F'}));
+
+    // The FDC-board CTC at D8-DB is clocked at 1 MHz, one quarter of the CPU
+    // clock. Channel 0 with prescaler 16 and constant 2 expires after 128 CPU
+    // cycles and supplies its own IM2 vector.
+    machine.output(0xd8, 0xa0);
+    machine.output(0xd8, 0x85);
+    machine.output(0xd8, 2);
+    machine.tick(127);
+    assert(!machine.interrupt_pending());
+    machine.tick(1);
+    assert(machine.interrupt_pending());
+    assert(machine.interrupt_vector() == 0xa0); // higher CTC nests over SIO
+    machine.interrupt_reti();                   // return from nested CTC handler
+    assert(!machine.interrupt_pending());       // SIO still blocks lower devices
+    machine.interrupt_reti();                   // return from original SIO handler
+
+    machine.output(0xfc, 0x80 | 0x00 | (1 << 2) | (2 << 4));
+    machine.write(0x1234, 0x71); // write page 1
+    assert(machine.read(0x1234) == 0); // read page 0
+    assert(machine.read(0x1234, true) == 0); // opcode page 2
+    machine.output(0xfc, 0x80 | 0x01 | (1 << 2) | (2 << 4));
+    assert(machine.read(0x1234) == 0x71);
+
+    machine.video().reset();
+    machine.output(0xc1, 0); // video bus
+    machine.video().write(3, 0, 1);  // R1: displayed columns
+    machine.video().write(3, 1, 80);
+    machine.video().write(3, 0, 6);  // R6: displayed character rows
+    machine.video().write(3, 1, 24);
+    machine.video().write(3, 0, 9);  // R9: scanlines per character - 1
+    machine.video().write(3, 1, 11);
+    machine.video().write(3, 0, 10); // R10: cursor disabled for address tests
+    machine.video().write(3, 1, 0x20);
+    machine.output(0xfc, 0x80 | 0x01 | (1 << 2));
+    machine.write(0x8000, 0x80);
+    machine.write(0x8100, 0x40); // next raster line is 0x100 bytes away
+    std::vector<std::uint32_t> pixels(vz256::Video::width * vz256::Video::height);
+    machine.video().render(pixels);
+    assert(pixels[0] == 0xffaaaaaaU);
+    assert(pixels[1] == 0xff000000U);
+    assert(pixels[vz256::Video::width] == 0xff000000U);
+    assert(pixels[vz256::Video::width + 1] == 0xffaaaaaaU);
+
+    // CRTC start address 0x100 is wired to VRAM address 0x9000, not 0x8100.
+    machine.video().write(3, 0, 12);
+    machine.video().write(3, 1, 1);
+    machine.video().write(3, 0, 13);
+    machine.video().write(3, 1, 0);
+    machine.write(0x9000, 0x20);
+    machine.video().render(pixels);
+    assert(pixels[2] == 0xffaaaaaaU);
+
+    // MC6845 R10/R11 define cursor raster lines and R14/R15 its display
+    // address. A steady cursor forces the complete character cell to white.
+    machine.video().write(3, 0, 1);
+    machine.video().write(3, 1, 2);
+    machine.video().write(3, 0, 6);
+    machine.video().write(3, 1, 1);
+    machine.video().write(3, 0, 12);
+    machine.video().write(3, 1, 0);
+    machine.video().write(3, 0, 13);
+    machine.video().write(3, 1, 0);
+    machine.video().write(3, 0, 14);
+    machine.video().write(3, 1, 0);
+    machine.video().write(3, 0, 15);
+    machine.video().write(3, 1, 1);
+    machine.video().write(3, 0, 10);
+    machine.video().write(3, 1, 10); // steady, starts on raster 10
+    machine.video().write(3, 0, 11);
+    machine.video().write(3, 1, 11);
+    machine.video().render(pixels);
+    assert(pixels[9 * vz256::Video::width + 8] == 0xff000000U);
+    assert(pixels[10 * vz256::Video::width + 8] == 0xffffffffU);
+    assert(pixels[11 * vz256::Video::width + 15] == 0xffffffffU);
+    machine.video().write(3, 0, 10);
+    machine.video().write(3, 1, 0x4a); // blink every 16 frames, raster 10
+    machine.video().write(3, 0, 0);
+    machine.video().write(3, 1, 99); // 100 character clocks per line
+    machine.video().write(3, 0, 4);
+    machine.video().write(3, 1, 25); // 26 character rows per frame
+    machine.video().write(3, 0, 5);
+    machine.video().write(3, 1, 2);  // two scanlines of vertical adjustment
+    // (100 * (26 * 12 + 2)) character clocks at 12.5 MHz correspond to
+    // 80,384 CPU cycles at 4 MHz, as programmed by the CP/M BIOS.
+    machine.video().tick(16U * 80'384U - 1U);
+    machine.video().render(pixels);
+    assert(pixels[10 * vz256::Video::width + 8] == 0xffffffffU);
+    machine.video().tick(1);
+    machine.video().render(pixels);
+    assert(pixels[10 * vz256::Video::width + 8] == 0xff000000U);
+
+    machine.output(0xd7, 0x88); // PIO base vector: channel A uses 0x8a
+    machine.output(0xd6, 0x83); // enable keyboard interrupt
+    machine.key('A');
+    machine.key(0x0d);
+    assert(machine.interrupt_pending());
+    assert(machine.interrupt_vector() == 0x8a);
+    assert(machine.input(0xd4) == static_cast<std::uint8_t>(~'A'));
+    machine.interrupt_reti();
+    assert(machine.interrupt_pending());
+    assert(machine.interrupt_vector() == 0x8a);
+    assert(machine.input(0xd4) == static_cast<std::uint8_t>(~0x0d));
+    machine.interrupt_reti();
+    assert(!machine.interrupt_pending());
+
+    // WD2797 read-sector flow and its DRQ signal through PIO channel B.
+    {
+        std::vector<std::uint8_t> disk(80 * vz256::FloppyImage::sides *
+                                      vz256::FloppyImage::sectors_per_track *
+                                      vz256::FloppyImage::sector_size);
+        disk[0] = 0xde;
+        disk[1] = 0xad;
+        std::ofstream image(temp / "disk.img", std::ios::binary);
+        image.write(reinterpret_cast<const char*>(disk.data()),
+                    static_cast<std::streamsize>(disk.size()));
+    }
+    assert(machine.drive(0).load(temp / "disk.img"));
+    assert(machine.drive(0).geometry().rpm == 300);
+    machine.reset();
+    // At 300 RPM one revolution takes 800,000 cycles at 4 MHz. INDEX is a
+    // four-millisecond pulse and must advance with time, not status reads.
+    assert((machine.input(0xd0) & vz256::Wd2797::data_request) != 0);
+    assert((machine.input(0xd0) & vz256::Wd2797::data_request) != 0);
+    machine.tick(15'999);
+    assert((machine.input(0xd0) & vz256::Wd2797::data_request) != 0);
+    machine.tick(1);
+    assert((machine.input(0xd0) & vz256::Wd2797::data_request) == 0);
+    machine.tick(800'000 - 16'000);
+    assert((machine.input(0xd0) & vz256::Wd2797::data_request) != 0);
+    // Force Interrupt bit 2 requests INTRQ on every following index edge.
+    machine.output(0xd0, 0xd4);
+    assert((machine.input(0xd5) & 0x40) == 0);
+    machine.tick(799'999);
+    assert((machine.input(0xd5) & 0x40) == 0);
+    machine.tick(1);
+    assert((machine.input(0xd5) & 0x40) != 0);
+    (void)machine.input(0xd0); // acknowledge INTRQ, keep periodic mode active
+    machine.tick(800'000);
+    assert((machine.input(0xd5) & 0x40) != 0);
+    machine.output(0xd0, 0xd0); // cancel conditional interrupts
+    machine.tick(800'000);
+    assert((machine.input(0xd5) & 0x40) == 0);
+    machine.output(0xd7, 0x88); // PIO B interrupt vector
+    machine.output(0xd7, 0xcf); // mode 3
+    machine.output(0xd7, 0xc0); // direction mask, not a vector
+    machine.output(0xd7, 0xb7); // enable interrupt on high level, mask follows
+    machine.output(0xd7, 0x7f); // monitor DRQ on bit 7
+    machine.output(0xd1, 0);    // track 0
+    machine.output(0xd2, 1);    // sector 1
+    machine.output(0xd0, 0x88); // read sector
+    auto floppy_status = machine.floppy_status();
+    assert(floppy_status.drive == 0);
+    assert(floppy_status.track == 0);
+    assert(floppy_status.side == 0);
+    assert(floppy_status.sector == 1);
+    assert(floppy_status.activity == vz256::Wd2797::Activity::read);
+    assert((machine.input(0xd5) & 0x80) == 0);
+    machine.tick(15'999);
+    assert((machine.input(0xd5) & 0x80) == 0);
+    machine.tick(1); // sector 1 follows the index field
+    assert((machine.input(0xd5) & 0x80) != 0);
+    assert(machine.interrupt_pending());
+    assert(machine.interrupt_vector() == 0x88);
+    assert(machine.input(0xd3) == 0xde);
+    machine.interrupt_reti();
+    assert(!machine.media_change_allowed());
+    assert(!machine.interrupt_pending());
+    machine.tick(64);
+    assert(machine.input(0xd3) == 0xad);
+    for (std::size_t i = 2; i < vz256::FloppyImage::sector_size; ++i) {
+        machine.tick(64);
+        (void)machine.input(0xd3);
+    }
+    assert(!machine.interrupt_pending());
+    assert((machine.input(0xd0) & vz256::Wd2797::busy) == 0);
+    assert(machine.media_change_allowed());
+    floppy_status = machine.floppy_status();
+    assert(floppy_status.activity == vz256::Wd2797::Activity::idle);
+    machine.reset();
+    machine.output(0xd1, 0);
+    machine.output(0xd2, 3);
+    machine.output(0xd0, 0x8c); // Read Sector with the head-settle E flag
+    machine.tick(120'000);      // 30 ms for a 5.25-inch drive
+    assert((machine.input(0xd5) & 0x80U) == 0);
+    machine.tick(73'775);
+    assert((machine.input(0xd5) & 0x80U) == 0);
+    machine.tick(1); // sector 3 reaches the settled head at cycle 193,776
+    assert((machine.input(0xd5) & 0x80U) != 0);
+    machine.output(0xd0, 0xd0); // abort the test transfer
+
+    // Force Interrupt bits 1 and 0 follow READY transitions caused by ejecting
+    // and reinserting the selected medium.
+    machine.output(0xd0, 0xd2); // Ready -> Not Ready
+    machine.drive(0).eject();
+    machine.tick(1);
+    assert((machine.input(0xd5) & 0x40U) != 0);
+    (void)machine.input(0xd0);
+    machine.output(0xd0, 0xd1); // Not Ready -> Ready
+    assert(machine.drive(0).load(temp / "disk.img"));
+    machine.tick(1);
+    assert((machine.input(0xd5) & 0x40U) != 0);
+    (void)machine.input(0xd0);
+    machine.output(0xd0, 0xd0);
+    const auto wait_for_drq = [&machine] {
+        for (std::uint32_t waited = 0; waited < 800'000; waited += 32) {
+            if ((machine.input(0xd5) & 0x80U) != 0) return;
+            machine.tick(32);
+        }
+        assert(false && "WD2797 DRQ did not arrive within one revolution");
+    };
+
+    // A 77-track 8-inch FM image uses 26 128-byte sectors instead of the
+    // default 5.25-inch 9x512 layout.
+    const auto eight_inch = vz256::floppy_geometries::eight_sssd_77;
+    assert(eight_inch.rpm == 360);
+    {
+        std::vector<std::uint8_t> disk(eight_inch.image_size());
+        disk.back() = 0x6c;
+        std::ofstream image(temp / "eight.img", std::ios::binary);
+        image.write(reinterpret_cast<const char*>(disk.data()),
+                    static_cast<std::streamsize>(disk.size()));
+    }
+    assert(vz256::floppy_geometries::find("8-sssd-77") != nullptr);
+    assert(vz256::floppy_geometries::detect(eight_inch.image_size()) != nullptr);
+    assert(machine.drive(0).load(temp / "eight.img", eight_inch));
+    assert(machine.drive(0).geometry().sector_size == 128);
+    assert(machine.drive(0).sector(76, 0, 26).back() == 0x6c);
+    assert(machine.drive(0).sector(77, 0, 1).empty());
+    assert(machine.drive(0).sector(0, 1, 1).empty());
+    machine.reset();
+    assert((machine.input(0xd0) & vz256::Wd2797::data_request) != 0);
+    machine.tick(16'000);
+    assert((machine.input(0xd0) & vz256::Wd2797::data_request) == 0);
+    machine.tick(666'666 - 16'000); // one revolution at 360 RPM
+    assert((machine.input(0xd0) & vz256::Wd2797::data_request) != 0);
+
+    machine.output(0xd1, 76);
+    machine.output(0xd2, 26);
+    machine.output(0xd0, 0xc4); // Read Address with 8-inch head-settle delay
+    assert((machine.input(0xd5) & 0x80U) == 0);
+    machine.tick(59'999);
+    assert((machine.input(0xd5) & 0x80U) == 0);
+    machine.tick(1); // 15 ms at 4 MHz
+    assert((machine.input(0xd5) & 0x80U) != 0);
+    assert(machine.input(0xd3) == 76);
+    machine.tick(128);
+    assert(machine.input(0xd3) == 0); // side
+    machine.tick(128);
+    assert(machine.input(0xd3) == 26);
+    machine.tick(128);
+    assert(machine.input(0xd3) == 0); // WD2797 N=0 means 128 bytes
+    machine.tick(128);
+    assert(machine.input(0xd3) == 0x2c); // CRC-16 of FE C H R N in FM
+    machine.tick(128);
+    assert(machine.input(0xd3) == 0xe4);
+
+    std::array<std::uint8_t, 128> replacement{};
+    replacement[0] = 0xa9;
+    assert(machine.drive(0).write_sector(0, 0, 1, replacement));
+    assert(machine.drive(0).dirty());
+    assert(machine.drive(0).save());
+    assert(!machine.drive(0).dirty());
+    assert(!fs::exists((temp / "eight.img").string() + ".vz256.tmp"));
+    assert(machine.drive(0).set_write_protected(true));
+    assert(machine.drive(0).write_protected());
+    assert(machine.drive(0).set_write_protected(false));
+    assert(!machine.drive(0).write_protected());
+    machine.drive(0).eject();
+    assert(!machine.drive(0).mounted());
+    assert(machine.drive(0).load(temp / "eight.img", true)); // auto-detect, read-only
+    assert(machine.drive(0).write_protected());
+    assert(!machine.drive(0).write_sector(0, 0, 1, replacement));
+
+    // With no medium, the WD2797 completes with NOT READY and the BIOS floppy
+    // timeout on CPU CTC channel 3 eventually releases its HALT transfer loop.
+    machine.drive(0).eject();
+    machine.output(0xd0, 0x88);
+    const auto empty_status = machine.input(0xd0);
+    assert((empty_status & vz256::Wd2797::not_ready) != 0);
+    assert((empty_status & vz256::Wd2797::busy) == 0);
+    machine.output(0xf4, 0x80); // CTC vector base
+    machine.output(0xf6, 0x27); // channel 2 timer, prescaler 256, constant follows
+    machine.output(0xf6, 156);  // approximately 10 ms at 4 MHz
+    machine.output(0xf7, 0xc7); // interrupt, counter, constant follows, reset
+    machine.output(0xf7, 1);    // one channel-2 terminal count
+    machine.tick(256U * 156U - 1U);
+    assert(!machine.interrupt_pending());
+    machine.tick(1);
+    assert(machine.interrupt_pending());
+    assert(machine.interrupt_vector() == 0x86);
+    assert(!machine.interrupt_pending());
+    machine.interrupt_reti();
+
+    // The double-sided 8-inch layout has the IBM 3740 77x26x128 organization
+    // on both sides. Exercise auto-detection and side selection through the
+    // WD2797, not just direct FloppyImage access.
+    const auto double_sided = vz256::floppy_geometries::eight_dssd_77;
+    {
+        std::vector<std::uint8_t> disk(double_sided.image_size());
+        const auto side_one_offset = double_sided.sectors_per_track *
+                                     double_sided.sector_size;
+        disk[side_one_offset] = 0x5d;
+        std::ofstream image(temp / "eight-double-sided.img", std::ios::binary);
+        image.write(reinterpret_cast<const char*>(disk.data()),
+                    static_cast<std::streamsize>(disk.size()));
+    }
+    assert(double_sided.image_size() == 512'512);
+    const auto* detected = vz256::floppy_geometries::detect(512'512);
+    assert(detected != nullptr);
+    assert(detected->name == "8-dssd-77");
+    assert(machine.drive(0).load(temp / "eight-double-sided.img"));
+    assert(machine.drive(0).sector(0, 1, 1).front() == 0x5d);
+    machine.output(0xd1, 0);    // track 0
+    machine.output(0xd2, 1);    // sector 1
+    machine.output(0xd0, 0x82); // Read Sector, side compare/side 1
+    wait_for_drq();
+    assert(machine.input(0xd3) == 0x5d);
+    machine.output(0xd0, 0xa2); // Write Sector, side compare/side 1
+    wait_for_drq();
+    for (std::size_t i = 0; i < double_sided.sector_size; ++i) {
+        if (i != 0) machine.tick(128);
+        machine.output(0xd3, static_cast<std::uint8_t>(i));
+    }
+    assert(machine.drive(0).sector(0, 1, 1).front() == 0x00);
+    assert(machine.drive(0).sector(0, 1, 1).back() == 0x7f);
+    assert(machine.drive(0).dirty());
+
+    // Double-density 8-inch media retain 26 sectors per track, but use
+    // 256-byte sectors. Verify its unique size and the WD2797 N=1 ID field.
+    const auto double_density = vz256::floppy_geometries::eight_dsdd_77;
+    {
+        std::vector<std::uint8_t> disk(double_density.image_size());
+        std::ofstream image(temp / "eight-double-density.img", std::ios::binary);
+        image.write(reinterpret_cast<const char*>(disk.data()),
+                    static_cast<std::streamsize>(disk.size()));
+    }
+    assert(double_density.image_size() == 1'025'024);
+    assert(double_density.sectors_per_track == 26);
+    assert(double_density.sector_size == 256);
+    detected = vz256::floppy_geometries::detect(double_density.image_size());
+    assert(detected != nullptr);
+    assert(detected->name == "8-dsdd-77");
+    assert(machine.drive(0).load(temp / "eight-double-density.img"));
+    machine.output(0xd1, 76);
+    machine.output(0xd2, 26);
+    machine.output(0xd0, 0xc2); // Read Address, side compare/side 1
+    assert(machine.input(0xd3) == 76);
+    machine.tick(64);
+    assert(machine.input(0xd3) == 1);
+    machine.tick(64);
+    assert(machine.input(0xd3) == 26);
+    machine.tick(64);
+    assert(machine.input(0xd3) == 1); // WD2797 N=1 means 256 bytes
+    machine.tick(64);
+    assert(machine.input(0xd3) == 0x33); // CRC-16 of A1 A1 A1 FE C H R N
+    machine.tick(64);
+    assert(machine.input(0xd3) == 0x1b);
+
+    // Read Track returns a canonical MFM stream with gaps, sync bytes, ID/data
+    // address marks, sector contents and valid CRC fields for the whole side.
+    machine.output(0xd0, 0xe2); // Read Track, side 1
+    constexpr std::size_t mfm_sector_bytes = 358;
+    constexpr std::size_t mfm_track_bytes = 26 * mfm_sector_bytes + 80;
+    std::vector<std::uint8_t> track_data;
+    track_data.reserve(mfm_track_bytes);
+    for (std::size_t i = 0; i < mfm_track_bytes; ++i) {
+        if (i != 0) machine.tick(64);
+        track_data.push_back(machine.input(0xd3));
+    }
+    assert(machine.media_change_allowed());
+    assert(track_data.size() == mfm_track_bytes);
+    assert(std::all_of(track_data.begin(), track_data.begin() + 40,
+                       [](std::uint8_t byte) { return byte == 0x4e; }));
+    assert(track_data[55] == 0xfe);
+    assert(track_data[56] == 76); // C
+    assert(track_data[57] == 1);  // H
+    assert(track_data[58] == 1);  // R
+    assert(track_data[59] == 1);  // N: 256 bytes
+    assert(track_data[60] == 0xec);
+    assert(track_data[61] == 0x92);
+    assert(track_data[99] == 0xfb);
+    assert(track_data[356] == 0xe1);
+    assert(track_data[357] == 0x22);
+
+    // Write Track consumes the WD2797 formatter tokens and commits each data
+    // field after its generated-CRC token. Format all 26 sectors on side 1.
+    machine.output(0xd0, 0xf2);
+    bool first_format_byte = true;
+    const auto format_byte = [&](std::uint8_t byte) {
+        if (!first_format_byte) machine.tick(64);
+        first_format_byte = false;
+        machine.output(0xd3, byte);
+    };
+    for (std::uint8_t number = 1; number <= 26; ++number) {
+        for (int i = 0; i < 3; ++i) format_byte(0xf5); // MFM A1 sync token
+        format_byte(0xfe);
+        format_byte(76);
+        format_byte(1);
+        format_byte(number);
+        format_byte(1); // N=1, 256 bytes
+        format_byte(0xf7); // generate ID CRC
+        for (int i = 0; i < 3; ++i) format_byte(0xf5);
+        format_byte(0xfb);
+        for (std::size_t i = 0; i < 256; ++i) format_byte(number);
+        format_byte(0xf7); // generate data CRC and commit the sector
+    }
+    assert(machine.media_change_allowed());
+    assert(machine.drive(0).dirty());
+    for (std::size_t number = 1; number <= 26; ++number) {
+        const auto bytes = machine.drive(0).sector(76, 1, number);
+        assert(bytes.size() == 256);
+        assert(std::all_of(bytes.begin(), bytes.end(), [number](std::uint8_t byte) {
+            return byte == number;
+        }));
+    }
+
+    assert(machine.drive(0).set_write_protected(true));
+    machine.output(0xd0, 0xf2);
+    const auto protected_status = machine.input(0xd0);
+    assert((protected_status & vz256::Wd2797::write_protect) != 0);
+    assert((protected_status & vz256::Wd2797::busy) == 0);
+    assert(machine.media_change_allowed());
+
+    // If the CPU leaves DRQ unserviced for a complete byte interval, the
+    // controller terminates the command and reports Type II/III LOST DATA.
+    machine.output(0xd2, 1);
+    machine.output(0xd0, 0x82); // Read Sector, side 1
+    assert(!machine.media_change_allowed());
+    wait_for_drq();
+    machine.tick(64);
+    const auto lost_status = machine.input(0xd0);
+    assert((lost_status & vz256::Wd2797::lost_data) != 0);
+    assert((lost_status & vz256::Wd2797::busy) == 0);
+    assert(machine.media_change_allowed());
+
+    fs::remove_all(temp);
+}
