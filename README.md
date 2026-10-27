@@ -267,7 +267,7 @@ bootovací disk, ze kterého CP/M nabootuje v režimu pouze pro čtení. Pokud j
 spuštěn v kořeni projektu, může použít zapisovatelný `disks/boot.img`; jiný zapisovatelný
 obraz lze zadat parametrem `--drive-a` nebo připojit přes dialog mechanik.
 
-#### Windows / MSYS2
+### Windows / MSYS2
 
 Nainstalujte [MSYS2](https://www.msys2.org/) a otevřete terminál **MSYS2 UCRT64**.
 Aktualizujte jej podle pokynů MSYS2 a pak spusťte:
