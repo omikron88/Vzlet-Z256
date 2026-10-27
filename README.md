@@ -267,16 +267,18 @@ bootovací disk, ze kterého CP/M nabootuje v režimu pouze pro čtení. Pokud j
 spuštěn v kořeni projektu, může použít zapisovatelný `disks/boot.img`; jiný zapisovatelný
 obraz lze zadat parametrem `--drive-a` nebo připojit přes dialog mechanik.
 
-#### Windows x64
+#### Windows / MSYS2
 
-Na Windows lze ze „Developer PowerShell for VS 2022“ vytvořit jediný přenositelný
-`vz256.exe` pomocí stejné statické varianty:
+Nainstalujte [MSYS2](https://www.msys2.org/) a otevřete terminál **MSYS2 UCRT64**.
+Aktualizujte jej podle pokynů MSYS2 a pak spusťte:
 
-```powershell
-cmake --preset windows-static
-cmake --build --preset windows-static
-ctest --preset windows-static
-.\build\windows-static\Release\vz256.exe
+```sh
+pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake \
+  mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-SDL3
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVZ256_STATIC_BUNDLE=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+./build/vz256.exe
 ```
 
 Program obsahuje monitorovou ROM, znakovou ROM, výchozí bootovací disk, SDL3, Z80,
