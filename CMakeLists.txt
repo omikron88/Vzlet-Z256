@@ -173,6 +173,14 @@ if(VZ256_BUILD_TESTS)
         $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
     add_test(NAME recent_media COMMAND vz256_recent_media_tests)
     if(VZ256_BUILD_APP)
+        add_executable(vz256_window_context_tests tests/window_context_tests.cpp
+                       src/about_window.cpp src/window_layout.cpp)
+        target_include_directories(vz256_window_context_tests PRIVATE src)
+        target_compile_features(vz256_window_context_tests PRIVATE cxx_std_20)
+        target_link_libraries(vz256_window_context_tests PRIVATE vz256_imgui)
+        add_test(NAME window_context COMMAND vz256_window_context_tests)
+        set_tests_properties(window_context PROPERTIES ENVIRONMENT
+            "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy;XDG_DATA_HOME=${CMAKE_CURRENT_BINARY_DIR}/ui-test-data")
         add_executable(vz256_cpu_tests tests/cpu_tests.cpp src/redcode_cpu.cpp)
         target_link_libraries(vz256_cpu_tests PRIVATE vz256_core Z80)
         target_compile_options(vz256_cpu_tests PRIVATE
