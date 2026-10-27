@@ -1,3 +1,4 @@
+#include "imgui_context_scope.hpp"
 #include "debugger.hpp"
 #include "window_layout.hpp"
 
@@ -23,6 +24,7 @@ struct DebuggerWindow::Impl {
     ~Impl() { destroy(); }
 
     void create() {
+        const ImGuiContextScope context_scope;
         if (window != nullptr) return;
         window = SDL_CreateWindow("Vzlet Z-256 - Debugger", 960, 720,
                                   SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN);
@@ -40,6 +42,7 @@ struct DebuggerWindow::Impl {
         }
     }
     void destroy() {
+        const ImGuiContextScope context_scope;
         if (context != nullptr) {
             ImGui::SetCurrentContext(context);
             ImGui_ImplSDLRenderer3_Shutdown(); ImGui_ImplSDL3_Shutdown();
@@ -74,7 +77,7 @@ void DebuggerWindow::open(bool& paused) {
 
 bool DebuggerWindow::handle_event(const SDL_Event& event, bool& paused) {
     if (impl_->window == nullptr || SDL_GetWindowFromEvent(&event) != impl_->window) return false;
-    ImGui::SetCurrentContext(impl_->context);
+    const ImGuiContextScope context_scope(impl_->context);
     ImGui_ImplSDL3_ProcessEvent(&event);
     if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
         open_ = false; SDL_HideWindow(impl_->window);
@@ -91,7 +94,7 @@ bool DebuggerWindow::breakpoint_hit(std::uint16_t pc) {
 
 void DebuggerWindow::render(vz256::Machine& machine, vz256::RedcodeCpu& cpu, bool& paused) {
     if (!open_ || impl_->window == nullptr) return;
-    ImGui::SetCurrentContext(impl_->context);
+    const ImGuiContextScope context_scope(impl_->context);
     ImGui_ImplSDLRenderer3_NewFrame(); ImGui_ImplSDL3_NewFrame(); ImGui::NewFrame();
     ImGui::SetNextWindowPos(ImVec2(0, 0)); ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     ImGui::Begin("Debugger", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
