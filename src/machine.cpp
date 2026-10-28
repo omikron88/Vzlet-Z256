@@ -32,11 +32,10 @@ bool copy_mirrored(std::span<const std::uint8_t> source,
 } // namespace
 
 Machine::Machine() {
-    // On a cold start CP/M expects the three extended 64 KiB banks to look
-    // like an empty RAM disk.  Keep bank zero cleared for the operating system
-    // and fill only the RAM-disk banks with CP/M's unused-directory marker.
-    for (std::size_t page = 1; page < ram_.size(); ++page)
-        ram_[page].fill(0xe5);
+    // On a cold start fill the beginning of extended banks with 0xE5 to look
+    // like an empty RAM disk. Keep bank zero cleared for the operating system
+    // and fill only the first RAM-disk bank with CP/M's unused-directory marker.
+    ram_[1].fill(0xE5);
 }
 
 bool Machine::load_roms(const std::filesystem::path& monitor,

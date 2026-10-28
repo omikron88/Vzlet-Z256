@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(vzlet-z256 VERSION 0.1.0 LANGUAGES C CXX)
+project(vzlet-z256 VERSION 0.1.1 LANGUAGES C CXX)
 
 option(VZ256_BUILD_APP "Build the SDL3 emulator front end" ON)
 option(VZ256_BUILD_TESTS "Build unit tests" ON)

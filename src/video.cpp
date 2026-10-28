@@ -4,6 +4,15 @@
 
 namespace vz256 {
 
+Video::Video() {
+    // On a cold start, fill Video RAM with 0xFF to simulate an unused memory.
+    // Czech font loader works buggy without this. It seems that its author forgot
+    // to add the ending 0xFF there. Silly that it works on real hardware, but it
+    // made chars =< 32 damaged here.
+    high_.fill(0xFF);
+    low_.fill(0xFF);
+}
+
 std::uint8_t Video::read(std::uint8_t bank, std::uint16_t address) const {
     switch (bank & 3U) {
     case 0: return chars_[address % chars_.size()];

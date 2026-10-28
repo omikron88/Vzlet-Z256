@@ -12,6 +12,8 @@ public:
     static constexpr int height = 300;
     static constexpr std::size_t plane_size = 65536;
 
+    Video();
+
     std::uint8_t read(std::uint8_t bank, std::uint16_t address) const;
     void write(std::uint8_t bank, std::uint16_t address, std::uint8_t value);
     void set_character_rom(std::span<const std::uint8_t> data);
