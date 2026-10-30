@@ -146,8 +146,8 @@ SDL 3 pro okno, vstup a výstup obrazu a procesorové jádro
   a automatické načtení dodaných ROM/disku.
 
 Klávesa **F10** nebo položka **File > Disk drives** otevře samostatné dceřiné SDL
-okno pro grafickou správu čtyř mechanik. Umožňuje vybrat geometrii, otevřít
-existující obraz, uložit jej,
+okno pro grafickou správu čtyř mechanik B–E. Disk A je v CP/M zabudovaný RAM disk.
+Okno umožňuje vybrat geometrii, otevřít existující obraz, uložit jej,
 vysunout médium a přepínat ochranu proti zápisu. Tlačítko **Create blank…** vytvoří
 podle právě zvolené geometrie nový obraz, vyplní jej
 bajtem `0xE5` používaným CP/M pro volné adresářové položky a rovnou jej připojí do
@@ -196,7 +196,7 @@ Výstupní soubor lze vybrat nebo změnit také za běhu pomocí položky
 odpojí; aktuální stav a název souboru se zobrazují ve spodním stavovém pruhu.
 Při diskové operaci stavový pruh navíc ukazuje vybranou mechaniku, stopu, stranu,
 sektor, druh operace a aktivní signály `DRQ`/`INTRQ` řadiče WD2797.
-Čtyři LED označené A–D svítí zeleně při čtení nebo vyhledávání a červeně při
+Čtyři LED označené B–E svítí zeleně při čtení nebo vyhledávání a červeně při
 zápisu či formátování. Krátké operace zůstávají indikovány ještě 150 ms, aby byla
 aktivita viditelná i na rychlém hostitelském počítači.
 
@@ -262,10 +262,10 @@ ctest --preset linux-static
 ```
 
 Takto vytvořený program pro spuštění nepotřebuje adresář `roms`, parametr
-`--resources` ani samostatný bootovací obraz. Statická varianta obsahuje také výchozí
-bootovací disk, ze kterého CP/M nabootuje v režimu pouze pro čtení. Pokud je program
-spuštěn v kořeni projektu, může použít zapisovatelný `disks/boot.img`; jiný zapisovatelný
-obraz lze zadat parametrem `--drive-a` nebo připojit přes dialog mechanik.
+`--resources`. Bootovací disk není součástí programu. Pokud je program spuštěn
+v kořeni projektu, automaticky připojí `disks/boot.img`; jiný obraz lze zadat
+parametrem `--drive-b` nebo připojit přes dialog mechanik. Bez externího obrazu
+zůstane mechanika B prázdná.
 
 ### Windows / MSYS2
 
@@ -281,17 +281,17 @@ ctest --test-dir build --output-on-failure
 ./build/vz256.exe
 ```
 
-Program obsahuje monitorovou ROM, znakovou ROM, výchozí bootovací disk, SDL3, Z80,
-Zeta a statický MSVC runtime (`/MT`). Nepotřebuje tedy DLL těchto knihoven ani další
-datové soubory. Nadále používá standardní systémové DLL dodávané s Windows. Vlastní
-zapisovatelné obrazy disket zůstávají volitelnými externími soubory.
+Program obsahuje monitorovou ROM, znakovou ROM, SDL3, Z80, Zeta a statický MSVC
+runtime (`/MT`). Nepotřebuje tedy DLL těchto knihoven ani externí ROM soubory.
+Nadále používá standardní systémové DLL dodávané s Windows. Obrazy disket včetně
+bootovacího disku se připojují z externích souborů.
 
-Obrazy a geometrie všech mechanik lze zadat samostatně (písmena `a` až `d`):
+Obrazy a geometrie všech mechanik lze zadat samostatně (písmena `b` až `e`):
 
 ```sh
 ./build/vz256 --resources . \
-  --drive-a disks/boot.img --geometry-a 5.25-dsdd-80 \
-  --drive-c disks/system8.img --geometry-c 8-dssd-77 --read-only-c
+  --drive-b disks/boot.img --geometry-b 5.25-dsdd-80 \
+  --drive-d disks/system8.img --geometry-d 8-dssd-77 --read-only-d
 ```
 
 Známé profily jsou `5.25-dsdd-80`, `5.25-dsdd-40`, `8-sssd-77`, `8-dssd-77`
