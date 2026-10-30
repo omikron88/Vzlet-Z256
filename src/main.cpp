@@ -270,9 +270,9 @@ UiActions draw_main_ui(vz256::Machine& machine, bool paused,
             IM_COL32(150, 160, 155, 255));
         ImGui::GetWindowDrawList()->AddText(
             ImVec2(position.x + 13.0F, position.y), IM_COL32_WHITE,
-            std::string(1, static_cast<char>('A' + i)).c_str());
+            std::string(1, static_cast<char>('B' + i)).c_str());
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Drive %c: %s", static_cast<char>('A' + i),
+            ImGui::SetTooltip("Drive %c: %s", static_cast<char>('B' + i),
                               !active ? "idle" : state.floppy_led_write[i]
                                   ? "writing" : "reading");
         ImGui::PopID();
@@ -280,7 +280,7 @@ UiActions draw_main_ui(vz256::Machine& machine, bool paused,
     for (std::size_t i = 0; i < 4; ++i) {
         ImGui::SameLine();
         const auto& drive = machine.drive(i);
-        ImGui::Text("%c:%s%s", static_cast<char>('A' + i),
+        ImGui::Text("%c:%s%s", static_cast<char>('B' + i),
                     drive.mounted() ? drive.path().filename().string().c_str() : "empty",
                     drive.dirty() ? "*" : "");
     }
@@ -288,7 +288,7 @@ UiActions draw_main_ui(vz256::Machine& machine, bool paused,
     if (printer_path.empty()) ImGui::TextUnformatted("PRN:offline");
     else ImGui::Text("PRN:%s", printer_path.filename().string().c_str());
     ImGui::SameLine();
-    ImGui::Text("FDC:%c T%u H%u S%u %s%s%s", static_cast<char>('A' + fdc.drive),
+    ImGui::Text("FDC:%c T%u H%u S%u %s%s%s", static_cast<char>('B' + fdc.drive),
                 fdc.track, fdc.side, fdc.sector, activity_name(fdc.activity),
                 fdc.drq ? " DRQ" : "", fdc.intrq ? " INTRQ" : "");
     if (!state.notification.empty() && now < state.notification_until) {
@@ -305,8 +305,8 @@ UiActions draw_main_ui(vz256::Machine& machine, bool paused,
 std::optional<std::size_t> drive_option(std::string_view option, std::string_view prefix) {
     if (!option.starts_with(prefix) || option.size() != prefix.size() + 1) return std::nullopt;
     const char letter = option.back();
-    return letter >= 'a' && letter <= 'd'
-               ? std::optional<std::size_t>{static_cast<std::size_t>(letter - 'a')}
+    return letter >= 'b' && letter <= 'e'
+               ? std::optional<std::size_t>{static_cast<std::size_t>(letter - 'b')}
                : std::nullopt;
 }
 
@@ -382,11 +382,11 @@ std::optional<std::uint8_t> special_key(const SDL_KeyboardEvent& event) {
 int main(int argc, char** argv) {
     Options options;
     if (!parse_options(argc, argv, options)) {
-        std::cerr << "Usage: vz256 [--resources DIR] [--drive-a IMAGE] "
-                     "[--geometry-a PROFILE] [--read-only-a] [--printer FILE] "
+        std::cerr << "Usage: vz256 [--resources DIR] [--drive-b IMAGE] "
+                     "[--geometry-b PROFILE] [--read-only-b] [--printer FILE] "
                      "[--tape FILE.wav] [--serial-a PORT] [--serial-b PORT] "
                      "[--serial-a-connect HOST:PORT] [--serial-b-connect HOST:PORT] "
-                     "[--debugger] (a..d)\n";
+                     "[--debugger] (disk drives: b..e)\n";
         return 2;
     }
 
@@ -416,15 +416,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 #endif
-#ifdef VZ256_EMBEDDED_ROMS
-    if (!options.image_set[0]) {
-        if (!machine.drive(0).load(vz256::embedded_boot_disk(),
-                                   vz256::floppy_geometries::five_25_dsdd_80)) {
-            std::cerr << "Unable to load embedded boot disk\n";
-            return 1;
-        }
-    }
-#endif
     if (!options.image_set[0] && std::filesystem::exists(options.resources / "disks/boot.img")) {
         options.images[0] = options.resources / "disks/boot.img";
         options.image_set[0] = true;
@@ -436,7 +427,7 @@ int main(int argc, char** argv) {
                                                         options.read_only[i])
                                 : machine.drive(i).load(options.images[i], options.read_only[i]);
         if (!loaded) {
-            std::cerr << "Unable to mount drive " << static_cast<char>('A' + i)
+            std::cerr << "Unable to mount drive " << static_cast<char>('B' + i)
                       << ": unknown geometry or invalid image size\n";
             return 1;
         }

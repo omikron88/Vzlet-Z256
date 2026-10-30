@@ -260,7 +260,7 @@ void MediaWindow::render() {
     for (std::size_t i = 0; i < 4; ++i) {
         const auto& mounted = impl_->machine.drive(i);
         ImGui::PushID(static_cast<int>(i));
-        const std::string label = std::string("Drive ") + static_cast<char>('A' + i);
+        const std::string label = std::string("Drive ") + static_cast<char>('B' + i);
         if (ImGui::Selectable(label.c_str(), impl_->drive == i,
                               ImGuiSelectableFlags_SpanAllColumns)) impl_->drive = i;
         ImGui::SameLine(105.0F);
