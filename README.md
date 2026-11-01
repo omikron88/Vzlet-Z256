@@ -155,7 +155,15 @@ vybrané mechaniky. U změněného obrazu je před vysunutím nutné změny ulo�
 výslovně zahodit; přepsání existujícího obrazu při vytváření prázdné diskety také
 vyžaduje potvrzení. Zápis obrazu používá dočasný soubor a atomické přejmenování.
 
-Hlavní menu nabízí reset (**F12**), pozastavení emulace (**F5**) a fullscreen
+Klávesnice používá fyzické pozice kláves a tabulky převodníku AT89C2051
+z `KEYB_FIN.ASM`. Samostatný **Alt** přepíná US / české KOI-8 rozložení; režim
+ukazuje `KBD:US` / `KBD:CZ` ve stavovém pruhu a lze jej zvolit také přes
+**Control > Keyboard layout**. Podporovány jsou háčky a čárky, Caps Lock,
+Ctrl i zadání hexadecimálního bajtu při držení Scroll Lock. **Backspace** posílá
+`08`, **Delete** `7F`; **F5–F7** v US režimu odpovídají ROL/COPY/BREAK.
+Podrobné kódy a zvláštnosti původního převodníku popisuje [doc/keyboard.txt](doc/keyboard.txt).
+
+Hlavní menu nabízí reset (**F12**), pozastavení emulace (**F4**) a fullscreen
 režim (**Alt+Enter**). Dear ImGui je staženo v připnuté verzi a přilinkováno
 staticky k frontendu; stažení lze řídit volbou `VZ256_FETCH_IMGUI`, případně
 použít lokální checkout přes `VZ256_IMGUI_SOURCE_DIR`.
