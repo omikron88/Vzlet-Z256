@@ -7,6 +7,7 @@
 #include "about_window.hpp"
 #include "configuration_archive.hpp"
 #include "debugger.hpp"
+#include "keyboard.hpp"
 #include "media_window.hpp"
 #include "profile_window.hpp"
 #include "recent_media.hpp"
@@ -73,6 +74,7 @@ struct UiActions {
 
 struct UiState {
     ViewSettings view;
+    Keyboard keyboard;
     std::string notification;
     double notification_until{};
     std::array<double, 4> floppy_led_until{};
@@ -216,6 +218,13 @@ UiActions draw_main_ui(vz256::Machine& machine, bool paused,
             if (ImGui::MenuItem(paused ? "Resume" : "Pause",
                                 shortcuts.label(ShortcutAction::pause))) actions.toggle_pause = true;
             ImGui::Separator();
+            if (ImGui::BeginMenu("Keyboard layout")) {
+                if (ImGui::MenuItem("US", nullptr, !state.keyboard.czech()))
+                    state.keyboard.set_czech(false);
+                if (ImGui::MenuItem("Czech KOI-8", nullptr, state.keyboard.czech()))
+                    state.keyboard.set_czech(true);
+                ImGui::EndMenu();
+            }
             if (ImGui::MenuItem("Keyboard shortcuts...")) actions.open_shortcuts = true;
             ImGui::EndMenu();
         }
@@ -243,6 +252,8 @@ UiActions draw_main_ui(vz256::Machine& machine, bool paused,
                                     ImGuiWindowFlags_NoMove |
                                     ImGuiWindowFlags_NoSavedSettings);
     ImGui::TextUnformatted(paused ? "PAUSED" : "RUN  4 MHz");
+    ImGui::SameLine();
+    ImGui::Text("KBD:%s", state.keyboard.czech() ? "CZ" : "US");
     const auto fdc = machine.floppy_status();
     const auto now = ImGui::GetTime();
     if (!state.notification.empty() && state.notification_until == 0.0)
@@ -351,30 +362,6 @@ bool parse_options(int argc, char** argv, Options& options) {
         if (options.serial_ports[channel] != 0 && !options.serial_hosts[channel].empty())
             return false;
     return true;
-}
-
-std::optional<std::uint8_t> special_key(const SDL_KeyboardEvent& event) {
-    const bool shift = (event.mod & SDL_KMOD_SHIFT) != 0;
-    if ((event.mod & SDL_KMOD_CTRL) != 0 && event.key >= SDLK_A && event.key <= SDLK_Z)
-        return static_cast<std::uint8_t>(event.key & 0x1f);
-    switch (event.key) {
-    case SDLK_RETURN: case SDLK_KP_ENTER: return 0x0d;
-    case SDLK_TAB: return 0x09;
-    case SDLK_ESCAPE: return 0x1b;
-    case SDLK_BACKSPACE: return 0x7f;
-    case SDLK_UP: return 0xc1;
-    case SDLK_DOWN: return 0xc2;
-    case SDLK_RIGHT: return 0xc3;
-    case SDLK_LEFT: return 0xc4;
-    case SDLK_HOME: return 0x8d;
-    case SDLK_DELETE: return shift ? 0x81 : 0x80; // ROL
-    case SDLK_INSERT: return shift ? 0x83 : 0x82; // COPY
-    case SDLK_END: return shift ? 0x85 : 0x84; // BREAK
-    case SDLK_F1: return 0xd0;
-    case SDLK_F2: return 0xd1;
-    case SDLK_F3: return 0xd2;
-    default: return std::nullopt;
-    }
 }
 
 } // namespace
@@ -567,6 +554,9 @@ int main(int argc, char** argv) {
         media_window->update();
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST &&
+                event.window.windowID == SDL_GetWindowID(window.get()))
+                ui_state.keyboard.release();
             if (about_window->handle_event(event)) {
                 ImGui::SetCurrentContext(main_imgui_context);
                 continue;
@@ -598,9 +588,22 @@ int main(int argc, char** argv) {
                 continue;
             }
             ImGui::SetCurrentContext(main_imgui_context);
-            ImGui_ImplSDL3_ProcessEvent(&event);
+            const bool layout_key = (event.type == SDL_EVENT_KEY_DOWN ||
+                                     event.type == SDL_EVENT_KEY_UP) &&
+                                    (event.key.scancode == SDL_SCANCODE_LALT ||
+                                     event.key.scancode == SDL_SCANCODE_RALT);
+            // Alt belongs to the converter, rather than ImGui's menu-layer
+            // toggle. Still keep the GUI's modifier state in sync.
+            if (layout_key)
+                ImGui::GetIO().AddKeyEvent(ImGuiMod_Alt, (event.key.mod & SDL_KMOD_ALT) != 0);
+            else
+                ImGui_ImplSDL3_ProcessEvent(&event);
             if (event.type == SDL_EVENT_QUIT) running = false;
             if (event.type == SDL_EVENT_KEY_DOWN) {
+                // Notify the converter of shortcut chords too, to cancel a
+                // pending standalone Alt toggle without emitting a guest key.
+                if (!layout_key && (event.key.mod & SDL_KMOD_ALT) != 0)
+                    ui_state.keyboard.cancel_layout_toggle();
                 if (event.key.key == shortcut_window->key(ShortcutAction::media)) {
                     media_window->open();
                 } else if (event.key.key == shortcut_window->key(ShortcutAction::cassette)) {
@@ -622,16 +625,15 @@ int main(int argc, char** argv) {
                     machine.reset(); cpu.reset();
                 }
                 else if (!ImGui::GetIO().WantCaptureKeyboard) {
-                    if (const auto key = special_key(event.key)) machine.key(*key);
+                    if (const auto key = ui_state.keyboard.handle_event(event.key)) machine.key(*key);
                 }
             }
-            if (!ImGui::GetIO().WantCaptureKeyboard &&
-                event.type == SDL_EVENT_TEXT_INPUT) {
-                for (const auto* text = reinterpret_cast<const unsigned char*>(event.text.text);
-                     *text != 0; ++text) {
-                    if (*text >= 0x20 && *text <= 0x7e) machine.key(*text);
-                }
+            if (event.type == SDL_EVENT_KEY_UP) {
+                if (ImGui::GetIO().WantCaptureKeyboard) ui_state.keyboard.release();
+                (void)ui_state.keyboard.handle_event(event.key);
             }
+            // SDL text events remain available to ImGui, but emulator input
+            // comes only from physical keys, avoiding host layout and duplicates.
         }
         const auto now = std::chrono::steady_clock::now();
         const auto micros = std::chrono::duration_cast<std::chrono::microseconds>(now - previous).count();

@@ -98,7 +98,7 @@ if(VZ256_BUILD_APP)
 
     string(TIMESTAMP VZ256_BUILD_DATE "%Y-%m-%d" UTC)
     add_executable(vz256 src/main.cpp src/about_window.cpp src/configuration_archive.cpp
-                   src/debugger.cpp src/media_window.cpp src/profile_window.cpp
+                   src/debugger.cpp src/keyboard.cpp src/media_window.cpp src/profile_window.cpp
                    src/recent_media.cpp src/serial_window.cpp src/shortcut_window.cpp
                    src/tape_window.cpp src/view_settings.cpp
                    src/window_layout.cpp
@@ -174,6 +174,18 @@ if(VZ256_BUILD_TESTS)
         $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
     add_test(NAME recent_media COMMAND vz256_recent_media_tests)
     if(VZ256_BUILD_APP)
+        add_executable(vz256_keyboard_tests tests/keyboard_tests.cpp src/keyboard.cpp)
+        target_include_directories(vz256_keyboard_tests PRIVATE src)
+        target_compile_features(vz256_keyboard_tests PRIVATE cxx_std_20)
+        target_compile_options(vz256_keyboard_tests PRIVATE
+            $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall;-Wextra;-Wpedantic;-Wconversion;-UNDEBUG>
+            $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
+        if(VZ256_STATIC_BUNDLE)
+            target_link_libraries(vz256_keyboard_tests PRIVATE vz256_core SDL3::SDL3-static)
+        else()
+            target_link_libraries(vz256_keyboard_tests PRIVATE vz256_core SDL3::SDL3)
+        endif()
+        add_test(NAME keyboard COMMAND vz256_keyboard_tests)
         add_executable(vz256_window_context_tests tests/window_context_tests.cpp
                        src/about_window.cpp src/window_layout.cpp)
         target_include_directories(vz256_window_context_tests PRIVATE src)

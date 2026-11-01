@@ -1,33 +1,80 @@
-Klávesnice je běžná Ascii klávesnice s několika speciálními kódy.
-Při stisku pošle Ascii kód tlačítka, při uvolnění neposílá nic.
-Při držení klávesy déle než asi 0.5s opakuje rychlostí asi 4 znaky za sekundu.
-Při stisku klávesy spolu s Ctrl vrací kódy 0-31, tak jako to dělaly první terminály:
-Ctrl+@ = 0x00
-Ctrl+A = 0x01
-Ctrl+B = 0x02
-Ctrl+C = 0x03
-a tak dál
+Klávesnice emuluje převodník PC AT -> paralelní ASCII/KOI-8 podle KEYB_FIN.ASM
+(AT89C2051). Tabulky US_MP, US_VP, CZ_MP, CZ_VP, CZ_HAC a CZ_CAR jsou převzaté
+z tohoto zdroje. Vstup vychází z fyzických kláves, nikoli z rozložení hostitelského
+systému. Výchozí režim po spuštění je US, Caps Lock a Num Lock vypnuté.
 
-Esc = 0x1B
-Backspace = 0x7F
-Tab = 9
-Enter = 0x0D
+Samostatný stisk a uvolnění levého nebo pravého Alt přepíná US / českou KOI-8
+klávesnici. Ve zdroji je přepínání v Z_ALT zakomentované; emulátor jej záměrně
+zapíná. Přepnutí až při uvolnění samostatného Alt zachovává hostitelské zkratky
+Alt+Enter a Alt+Tab. Režim lze také zvolit přes Control > Keyboard layout;
+aktuální režim ukazuje stavový pruh jako KBD:US nebo KBD:CZ.
 
-speciální kódy:
+Znaky se posílají při stisku a opakování klávesy, ne při uvolnění. Rychlost
+opakování určuje hostitel. SDL textové události zůstávají pro textová pole GUI,
+ale do emulovaného stroje se neposílají podruhé.
 
-ROL   (mapováno na Del) 0x80, se Shift 0x81
-COPY  (mapováno na Ins) 0x82, se Shift 0x83 
-BREAK (mapováno na End) 0x84, se Shift 0x85
+Caps Lock vybírá opačnou tabulku než Shift (Caps XOR Shift), a to i u číslic,
+interpunkce a funkčních kláves. US Caps+1 tedy posílá !, Caps+Shift+1 posílá 1.
+Zámky mají vlastní stav převodníku, nezávislý na zámcích hostitele.
 
-Směrová tlačítka:
+V CZ režimu klávesa na pozici US = nastaví čárku pro následující znak;
+Shift se stejnou klávesou nastaví háček. Písmeno se převede podle CZ_CAR/CZ_HAC.
+Velikost písmena při této transformaci určuje Shift stejně jako v převodníku:
+háček, C -> e3h (č); háček, Shift+C -> c3h (Č). Číselná řada bez Shiftu píše
++ěščřžýáíé, se Shiftem 1234567890. Písmena Y a Z se neprohazují. Hodnoty DB
+se zachovávají i tam, kde komentář ASM nesouhlasí s hodnotou; nejde o obecný
+převod Unicode ani o záměnu za jinou variantu KOI-8.
 
-nahoru 0xc1
-dolů   0xc2
-vpravo 0xc3
-vlevo  0xc4
-Home   0x8d
+Ctrl se aplikuje na znak z vybrané tabulky: @ a vyšší ASCII kódy se maskují
+na 00h–1fh, ? zůstane ?, znaky pod ? se neposílají. Ctrl+@ tedy pošle 00h,
+Ctrl+A 01h, Ctrl+[ 1bh, Ctrl+\ 1ch, Ctrl+] 1dh, Ctrl+^ 1eh, Ctrl+_ 1fh.
+Čárka nebo háček mají přednost před Ctrl. Rozšířené klávesy (navigace,
+numerický Enter a /) se zpracovávají mimo Ctrl i mimo doplňování diakritiky.
 
-Uživatelská tlačítka:
-jsou tři bez označení, kódy 0xd0, 0xd1, 0xd2
-namapovat možná na F1-F3.
+Základní kódy v režimu US (hexadecimálně):
 
+Klávesa             Bez Shiftu       Se Shiftem
+Esc                 1b               1b
+Backspace           08               08
+Tab                 09               09
+Enter               0d               0d
+Delete              7f               7f
+Insert              16               nic
+Home                1e               15
+End                 11               0f
+Page Up             12               nic
+Page Down           03               nic
+Nahoru              c1               c1
+Dolů                c2               c2
+Vpravo              c3               c3
+Vlevo               c4               c4
+F1                  d0               d0
+F2                  d1               d1
+F3                  d2               d2
+F5 (ROL)            80               81
+F6 (COPY)           82               83
+F7 (BREAK)          84               85
+
+V CZ tabulkách nemají F5–F7 přiřazený znak. Rutina OUTPUT převodníku v CZ režimu
+obrací bit 5 u VŠECH bajtů c0h–ffh, tedy nejen u českých písmen: například F1
+posílá f0h a šipka nahoru e1h. Emulátor zachovává i toto chování.
+
+Num Lock podle EXTEND v původním zdroji blokuje samostatné navigační klávesy.
+Numerická klávesnice naproti tomu stále píše čísla a operátory bez ohledu na
+Num Lock i Shift; numerické Enter a / fungují vždy.
+
+Při držení Scroll Lock lze zadávat páry hexadecimálních číslic (0–9, a–f, A–F).
+Každý pár pošle jeden bajt, včetně 00h. Neplatné číslice se ignorují. Uvolnění
+Scroll Lock ruší neúplný pár. I tento vstup v CZ režimu prochází rutinou OUTPUT,
+která u bajtů c0h–ffh obrací bit 5. Navigace neprochází hexadecimálním vstupem.
+
+Ztráta zaměření hlavního okna ruší rozpracovanou diakritiku a hexadecimální vstup,
+ale zachovává režim US/CZ a zámky Caps/Num. Není emulováno časování sériové
+PS/2 linky, LED hostitelské klávesnice ani čtení mimo diakritické tabulky u
+nepísmenných znaků. Logický bajt se předá Machine::key, která jej právě jednou
+invertuje pro aktivně nízké datové vstupy PIO stejně jako hardwarový převodník.
+
+Výchozí zkratky emulátoru: F4 pauza, F8 sériové linky, F9 kazeta, F10 mechaniky,
+F11 debugger, F12 reset, Alt+Enter celá obrazovka. F5 je vyhrazeno klávese ROL.
+Původní nezměněná sada zkratek s pauzou na F5 se automaticky převede na F4;
+vlastní sady se zachovávají a mají při kolizi přednost před emulovanou klávesnicí.

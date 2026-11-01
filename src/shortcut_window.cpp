@@ -21,7 +21,8 @@ constexpr std::array<const char*, 12> function_labels{
     "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"};
 constexpr std::array<const char*, static_cast<std::size_t>(ShortcutAction::count)> action_labels{
     "Pause / resume", "Serial links", "Cassette", "Disk drives", "Debugger", "Reset"};
-constexpr std::array<int, static_cast<std::size_t>(ShortcutAction::count)> defaults{4, 7, 8, 9, 10, 11};
+constexpr std::array<int, static_cast<std::size_t>(ShortcutAction::count)> defaults{3, 7, 8, 9, 10, 11};
+constexpr std::array<int, static_cast<std::size_t>(ShortcutAction::count)> legacy_defaults{4, 7, 8, 9, 10, 11};
 
 std::filesystem::path configuration_path() {
     char* preference_path = SDL_GetPrefPath("Vzlet", "Vzlet-Z256");
@@ -49,7 +50,8 @@ struct ShortcutWindow::Impl {
         for (auto& shortcut : loaded)
             if (!(input >> shortcut) || shortcut < 0 || shortcut >= static_cast<int>(function_keys.size()))
                 return;
-        shortcuts = loaded;
+        // Free F5 for the hardware converter's ROL key. Preserve custom sets.
+        shortcuts = loaded == legacy_defaults ? defaults : loaded;
     }
 
     void save() const {
